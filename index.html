@@ -133,7 +133,7 @@
         </div>
         <p id="catalogo-count" class="ui-muted text-xs mb-2"></p>
         <div id="catalogo-list" class="flex flex-col gap-4"></div>
-        <div id="catalogo-pagination" class="flex items-center justify-center gap-2 mt-4 mb-6"></div>
+        <div id="catalogo-pagination" class="flex items-center justify-center gap-2 mt-4 mb-16 md:mb-6"></div>
       </section>
 
       <section id="section-tassonomia" class="hidden">
@@ -513,7 +513,7 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.7';
+const APP_VERSION = '1.10';
 
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 2; // bump da 1 a 2: aggiunge lo store "settings" anche a chi ha già aperto il Punto 1
@@ -1054,10 +1054,16 @@ window.OperaCodex = {
    (sidebar persistente su desktop, bottom-nav + drawer a comparsa su mobile) e temi.
    ===================================================================================== */
 
+// Icone di navigazione coerenti con lo stile delle icone "+ Edizione"/"+ Istanza": SVG inline,
+// colore ereditato (currentColor) così seguono automaticamente il tema attivo.
+const ICON_CATALOGO = '<svg viewBox="0 0 24 24" class="w-full h-full" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="4" height="16" rx="1" fill="currentColor" opacity="0.55"/><rect x="8.5" y="6" width="4" height="14" rx="1" fill="currentColor" opacity="0.85"/><rect x="14" y="3" width="4" height="17" rx="1" fill="currentColor" opacity="0.55"/></svg>';
+const ICON_TASSONOMIA = '<svg viewBox="0 0 24 24" class="w-full h-full" xmlns="http://www.w3.org/2000/svg"><path d="M12.6 2.6 21 11a2 2 0 0 1 0 2.8l-6.6 6.6a2 2 0 0 1-2.8 0L3 11.8V4.6A2 2 0 0 1 5 2.6Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="7.4" cy="7.4" r="1.3" fill="currentColor"/></svg>';
+const ICON_IMPOSTAZIONI = '<svg viewBox="0 0 24 24" class="w-full h-full" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v3M12 18.5v3M4.5 4.5l2.1 2.1M17.4 17.4l2.1 2.1M2.5 12h3M18.5 12h3M4.5 19.5l2.1-2.1M17.4 6.6l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+
 const SECTIONS = [
-  { key: 'catalogo',     icon: '📚', label: 'Catalogo' },
-  { key: 'tassonomia',   icon: '🏷️', label: 'Tassonomia' },
-  { key: 'impostazioni', icon: '⚙️', label: 'Impostazioni' },
+  { key: 'catalogo',     icon: ICON_CATALOGO,     label: 'Catalogo' },
+  { key: 'tassonomia',   icon: ICON_TASSONOMIA,   label: 'Tassonomia' },
+  { key: 'impostazioni', icon: ICON_IMPOSTAZIONI, label: 'Impostazioni' },
 ];
 const DEFAULT_NAV_ORDER = SECTIONS.map(s => s.key);
 
@@ -1216,7 +1222,7 @@ function renderNav(containerId, { vertical }) {
   el.innerHTML = ordered.map(s => `
     <button onclick="switchSection('${s.key}')" data-nav="${s.key}"
       class="nav-btn flex ${vertical ? 'items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold w-full text-left' : 'flex-col items-center justify-center gap-1 p-1 rounded-xl w-1/3'}">
-      <span class="${vertical ? 'text-base' : 'text-lg'}">${s.icon}</span>
+      <span class="${vertical ? 'w-4 h-4' : 'w-5 h-5'} shrink-0">${s.icon}</span>
       ${showLabel ? `<span class="${vertical ? '' : 'text-[10px] font-semibold'}">${s.label}</span>` : ''}
     </button>`).join('');
   updateNavActiveState();
@@ -1928,6 +1934,35 @@ async function onLogDateChange(sessionId, oldDate, newDate) {
 
 // --- RENDER CATALOGO (nessun filtro/ricerca: arrivano al Punto 4) ------------------------
 
+// Icone a bottone "+ Edizione" (libri) e "+ Istanza" (codice a barre), con badge "+" — al posto
+// del solo testo, per pulsanti più compatti e riconoscibili a colpo d'occhio.
+function iconAddEditionButton(operaId) {
+  return `
+    <button onclick="openEditionModal('${operaId}')" title="Aggiungi Edizione" class="ui-btn-sec relative h-8 w-10 rounded-lg flex items-center justify-center shrink-0">
+      <svg viewBox="0 0 24 24" class="w-4 h-4" xmlns="http://www.w3.org/2000/svg">
+        <rect x="3" y="4" width="4" height="16" rx="1" fill="currentColor" opacity="0.55"/>
+        <rect x="8.5" y="6" width="4" height="14" rx="1" fill="currentColor" opacity="0.8"/>
+        <rect x="14" y="3" width="4" height="17" rx="1" fill="currentColor" opacity="0.55"/>
+      </svg>
+      <span class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full ui-accent-bg text-white text-[9px] font-bold flex items-center justify-center leading-none">+</span>
+    </button>`;
+}
+function iconAddInstanceButton(operaId, editionId) {
+  return `
+    <button onclick="openInstanceModal('${operaId}','${editionId}')" title="Aggiungi Istanza" class="ui-btn-sec relative h-7 w-9 rounded-lg flex items-center justify-center shrink-0">
+      <svg viewBox="0 0 24 24" class="w-4 h-4" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="4" width="1.6" height="16" fill="currentColor"/>
+        <rect x="5" y="4" width="1" height="16" fill="currentColor"/>
+        <rect x="7.4" y="4" width="2" height="16" fill="currentColor"/>
+        <rect x="11" y="4" width="1" height="16" fill="currentColor"/>
+        <rect x="13" y="4" width="1.6" height="16" fill="currentColor"/>
+        <rect x="16" y="4" width="1" height="16" fill="currentColor"/>
+        <rect x="18.4" y="4" width="2" height="16" fill="currentColor"/>
+      </svg>
+      <span class="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full ui-accent-bg text-white text-[9px] font-bold flex items-center justify-center leading-none">+</span>
+    </button>`;
+}
+
 function statusBadgeClass(status) {
   return {
     'Da Leggere': 'bg-gray-500/15',
@@ -2076,7 +2111,7 @@ async function renderCatalogo() {
         </div>
         <div class="flex gap-1 shrink-0">
           <button onclick="openOperaModal('${opera.id}')" class="ui-btn-sec w-8 h-8 rounded-lg text-sm">✎</button>
-          <button onclick="openEditionModal('${opera.id}')" class="ui-btn-sec px-2 h-8 rounded-lg text-xs font-semibold">+ Edizione</button>
+          ${iconAddEditionButton(opera.id)}
         </div>
       </div>
 
@@ -2093,7 +2128,7 @@ async function renderCatalogo() {
               </div>
               <div class="flex gap-1 shrink-0">
                 <button onclick="openEditionModal('${opera.id}','${edition.id}')" class="ui-btn-sec w-7 h-7 rounded-lg text-xs">✎</button>
-                <button onclick="openInstanceModal('${opera.id}','${edition.id}')" class="ui-btn-sec px-2 h-7 rounded-lg text-xs font-semibold">+ Istanza</button>
+                ${iconAddInstanceButton(opera.id, edition.id)}
               </div>
             </div>
             <div class="pl-3 border-l-2 border-gray-500/10 mt-1.5 flex flex-col gap-1.5">
@@ -2121,16 +2156,21 @@ function renderPaginationControls(totalPages) {
   const el = document.getElementById('catalogo-pagination');
   if (!el) return;
   if (totalPages <= 1) { el.innerHTML = ''; return; }
-  const maxButtons = 7;
-  let startP = Math.max(1, catalogPage - 3);
+
+  // Pulsanti numerati su tutte le dimensioni di schermo. Su mobile il numero massimo di pulsanti
+  // è più contenuto (5 invece di 7) per restare sempre entro la larghezza anche sugli schermi più
+  // stretti, senza andare in overflow orizzontale.
+  const maxButtons = window.innerWidth < 768 ? 5 : 7;
+  let startP = Math.max(1, catalogPage - Math.floor(maxButtons / 2));
   let endP = Math.min(totalPages, startP + maxButtons - 1);
   startP = Math.max(1, endP - maxButtons + 1);
-  let html = `<button onclick="goToPage(${Math.max(1, catalogPage - 1)})" ${catalogPage === 1 ? 'disabled' : ''} class="ui-btn-sec w-8 h-8 rounded-lg text-xs font-bold ${catalogPage === 1 ? 'opacity-30' : ''}">‹</button>`;
+  let numbered = `<button onclick="goToPage(${Math.max(1, catalogPage - 1)})" ${catalogPage === 1 ? 'disabled' : ''} class="ui-btn-sec w-8 h-8 rounded-lg text-xs font-bold ${catalogPage === 1 ? 'opacity-30' : ''}">‹</button>`;
   for (let p = startP; p <= endP; p++) {
-    html += `<button onclick="goToPage(${p})" class="w-8 h-8 rounded-lg text-xs font-bold ${p === catalogPage ? 'ui-accent-bg text-white' : 'ui-btn-sec'}">${p}</button>`;
+    numbered += `<button onclick="goToPage(${p})" class="w-8 h-8 rounded-lg text-xs font-bold ${p === catalogPage ? 'ui-accent-bg text-white' : 'ui-btn-sec'}">${p}</button>`;
   }
-  html += `<button onclick="goToPage(${Math.min(totalPages, catalogPage + 1)})" ${catalogPage === totalPages ? 'disabled' : ''} class="ui-btn-sec w-8 h-8 rounded-lg text-xs font-bold ${catalogPage === totalPages ? 'opacity-30' : ''}">›</button>`;
-  el.innerHTML = html;
+  numbered += `<button onclick="goToPage(${Math.min(totalPages, catalogPage + 1)})" ${catalogPage === totalPages ? 'disabled' : ''} class="ui-btn-sec w-8 h-8 rounded-lg text-xs font-bold ${catalogPage === totalPages ? 'opacity-30' : ''}">›</button>`;
+
+  el.innerHTML = `<div class="flex flex-wrap items-center justify-center gap-2 w-full">${numbered}</div>`;
 }
 
 // --- MODULO TASSONOMIA --------------------------------------------------------------------
