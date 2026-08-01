@@ -1,0 +1,2179 @@
+<!DOCTYPE html>
+<html lang="it" class="h-full">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Opera Codex</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  html, body { height: 100%; }
+  body { -webkit-tap-highlight-color: transparent; }
+
+  /* Spazio per la barra di navigazione dei gesti dello smartphone (home indicator):
+     env() ha un fallback a 0px sui browser che non la supportano, quindi calc() resta sempre valido. */
+  .pb-safe-nav { padding-bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px)); }
+  @media (min-width: 768px) { .pb-safe-nav { padding-bottom: 2.5rem; } }
+  .bottom-nav-safe { padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom, 0px)) 0.5rem; }
+
+  /* ============ Sistema di temi (ereditato da OmniShelf) ============ */
+  body.theme-dark {
+    --theme-accent: #6366f1; background-color:#030712; color:#f1f5f9;
+  }
+  body.theme-dark .ui-card { background-color:#111827; border-color:#1f2937; color:#f1f5f9; }
+  body.theme-dark .ui-nav  { background-color:rgba(17,24,39,.95); border-color:#1f2937; }
+  body.theme-dark .ui-input{ background-color:#030712; border-color:#374151; color:#f1f5f9; }
+  body.theme-dark .ui-btn-sec{ background-color:#374151; color:#f1f5f9; }
+  body.theme-dark .ui-muted{ color:#94a3b8; }
+
+  body.theme-light {
+    --theme-accent: #4f46e5; background-color:#f8fafc; color:#0f172a;
+  }
+  body.theme-light .ui-card { background-color:#ffffff; border-color:#e2e8f0; color:#0f172a; }
+  body.theme-light .ui-nav  { background-color:rgba(255,255,255,.95); border-color:#e2e8f0; }
+  body.theme-light .ui-input{ background-color:#f1f5f9; border-color:#cbd5e1; color:#0f172a; }
+  body.theme-light .ui-btn-sec{ background-color:#e2e8f0; color:#0f172a; }
+  body.theme-light .ui-muted{ color:#64748b; }
+
+  body.theme-nordic {
+    --theme-accent: #88c0d0; background-color:#2e3440; color:#eceff4;
+  }
+  body.theme-nordic .ui-card { background-color:#3b4252; border-color:#434c5e; color:#eceff4; }
+  body.theme-nordic .ui-nav  { background-color:rgba(59,66,82,.95); border-color:#434c5e; }
+  body.theme-nordic .ui-input{ background-color:#2e3440; border-color:#4c566a; color:#eceff4; }
+  body.theme-nordic .ui-btn-sec{ background-color:#4c566a; color:#eceff4; }
+  body.theme-nordic .ui-muted{ color:#9fb0c8; }
+
+  body.theme-monokai {
+    --theme-accent: #e6db74; background-color:#1e1e1e; color:#f8f8f2;
+  }
+  body.theme-monokai .ui-card { background-color:#252526; border-color:#333333; color:#f8f8f2; }
+  body.theme-monokai .ui-nav  { background-color:rgba(37,37,38,.95); border-color:#333333; }
+  body.theme-monokai .ui-input{ background-color:#1e1e1e; border-color:#3e3e42; color:#f8f8f2; }
+  body.theme-monokai .ui-btn-sec{ background-color:#333333; color:#f8f8f2; }
+  body.theme-monokai .ui-muted{ color:#a6a6a0; }
+
+  body.theme-paper {
+    --theme-accent: #a65b32; background-color:#f4ebd9; color:#4a3b32;
+  }
+  body.theme-paper .ui-card { background-color:#e8dfce; border-color:#d8cebc; color:#4a3b32; }
+  body.theme-paper .ui-nav  { background-color:rgba(232,223,206,.95); border-color:#d8cebc; }
+  body.theme-paper .ui-input{ background-color:#f4ebd9; border-color:#c8beac; color:#4a3b32; }
+  body.theme-paper .ui-btn-sec{ background-color:#d8cebc; color:#4a3b32; }
+  body.theme-paper .ui-muted{ color:#7a6b5f; }
+
+  body.theme-soft {
+    --theme-accent: #b5793a; background-color:#f7f2e9; color:#2b2418;
+  }
+  body.theme-soft .ui-card { background-color:#ffffff; border-color:#ddd2b8; color:#2b2418; }
+  body.theme-soft .ui-nav  { background-color:rgba(255,255,255,.95); border-color:#ddd2b8; }
+  body.theme-soft .ui-input{ background-color:#ece5d3; border-color:#ddd2b8; color:#2b2418; }
+  body.theme-soft .ui-btn-sec{ background-color:#ece5d3; color:#2b2418; }
+  body.theme-soft .ui-muted{ color:#8a7c66; }
+
+  .ui-accent-bg { background-color: var(--theme-accent); }
+  .ui-accent-text { color: var(--theme-accent); }
+  .ui-accent-border { border-color: var(--theme-accent); }
+
+  #mobile-drawer.open { transform: translateX(0); }
+</style>
+</head>
+<body class="theme-soft font-sans antialiased h-full">
+
+  <!-- ===================== HEADER ===================== -->
+  <header class="ui-nav border-b sticky top-0 z-20 backdrop-blur-md">
+    <div class="max-w-6xl mx-auto flex items-center justify-between px-4 py-3">
+      <div class="flex items-center gap-2">
+        <span class="text-xl leading-none">📖</span>
+        <h1 class="font-bold text-lg tracking-tight">Opera Codex</h1>
+      </div>
+      <button id="drawer-toggle-btn" onclick="openDrawer()"
+        class="md:hidden ui-btn-sec px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1">
+        ☰ Filtri
+      </button>
+    </div>
+  </header>
+
+  <div id="init-error-banner" class="hidden max-w-6xl mx-auto mt-3 px-4">
+    <div class="rounded-xl border border-red-400/50 bg-red-500/10 text-red-600 text-sm p-3">
+      <p class="font-bold mb-1">⚠️ Errore in fase di avvio</p>
+      <p id="init-error-message" class="text-xs"></p>
+    </div>
+  </div>
+
+  <div class="max-w-6xl mx-auto md:flex md:items-start">
+
+    <!-- ===================== SIDEBAR DESKTOP ===================== -->
+    <aside class="hidden md:flex md:flex-col md:w-64 md:shrink-0 ui-nav border-r md:min-h-[calc(100vh-57px)] p-4 gap-1">
+      <div id="nav-desktop-slot" class="flex flex-col gap-1"></div>
+      <div id="sidebar-filters-slot" class="mt-5 pt-4 border-t" style="border-color:var(--theme-accent,#ccc); opacity:0.9;"></div>
+    </aside>
+
+    <!-- ===================== MAIN ===================== -->
+    <main class="flex-1 w-full px-4 py-5 pb-safe-nav">
+
+      <section id="section-catalogo">
+        <div class="flex items-center justify-between mb-1 gap-2">
+          <h2 class="text-xl font-bold">Catalogo</h2>
+          <div class="flex gap-2 shrink-0">
+            <button onclick="openApiSearchModal()" class="ui-btn-sec px-3 py-2 rounded-xl text-xs font-semibold">🔍 Cerca online</button>
+            <button onclick="openOperaModal()" class="ui-accent-bg text-white px-3 py-2 rounded-xl text-xs font-semibold">+ Nuova Opera</button>
+          </div>
+        </div>
+        <p class="ui-muted text-sm mb-3">Vista principale della libreria (Opere → Edizioni → Istanze). Filtri completi nel pannello laterale / cassetto "☰ Filtri".</p>
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+          <input id="catalog-search-inline" type="text" placeholder="Cerca per titolo, autore, descrizione, serie o tag..." oninput="setSearchFilter(this.value)" class="catalog-search-input ui-input flex-1 min-w-[12rem] p-2.5 rounded-xl border text-sm">
+          <select id="catalog-sort-select" onchange="setSortOrder(this.value)" class="catalog-sort-select ui-input p-2.5 rounded-xl border text-xs">
+            <option value="title-asc">Titolo (A-Z)</option>
+            <option value="author-asc">Autore (A-Z)</option>
+            <option value="series-asc">Serie & N° volume</option>
+            <option value="rating-desc">Valutazione (decrescente)</option>
+          </select>
+        </div>
+        <p id="catalogo-count" class="ui-muted text-xs mb-2"></p>
+        <div id="catalogo-list" class="flex flex-col gap-4"></div>
+        <div id="catalogo-pagination" class="flex items-center justify-center gap-2 mt-4"></div>
+      </section>
+
+      <section id="section-tassonomia" class="hidden">
+        <h2 class="text-xl font-bold mb-1">Tassonomia</h2>
+        <p class="ui-muted text-sm mb-4">Gestione di Sottogeneri, Micro-generi e Modificatori: conteggio d'uso, rinomina a cascata, fusione duplicati. Seleziona due o più voci nella stessa lista per unirle in un unico tag.</p>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="ui-card border rounded-2xl p-4">
+            <div class="flex items-center justify-between mb-2">
+              <p class="font-bold text-sm">Sottogeneri</p>
+              <button onclick="mergeSelectedTags('subgenres')" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">Unisci selezionati</button>
+            </div>
+            <div id="taxonomy-subgenres" class="flex flex-col gap-1.5"></div>
+          </div>
+          <div class="ui-card border rounded-2xl p-4">
+            <div class="flex items-center justify-between mb-2">
+              <p class="font-bold text-sm">Micro-generi</p>
+              <button onclick="mergeSelectedTags('microgenres')" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">Unisci selezionati</button>
+            </div>
+            <div id="taxonomy-microgenres" class="flex flex-col gap-1.5"></div>
+          </div>
+          <div class="ui-card border rounded-2xl p-4">
+            <div class="flex items-center justify-between mb-2">
+              <p class="font-bold text-sm">Modificatori</p>
+              <button onclick="mergeSelectedTags('modifiers')" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">Unisci selezionati</button>
+            </div>
+            <div id="taxonomy-modifiers" class="flex flex-col gap-1.5"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="section-impostazioni" class="hidden">
+        <h2 class="text-xl font-bold mb-1">Impostazioni</h2>
+        <p class="ui-muted text-sm mb-4">Tema dell'applicazione — la scelta viene salvata e riproposta al prossimo avvio.</p>
+        <div class="ui-card border rounded-2xl p-5">
+          <p class="text-xs font-bold uppercase tracking-wider ui-accent-text mb-3">Tema</p>
+          <div id="theme-picker" class="grid grid-cols-2 sm:grid-cols-3 gap-2"></div>
+        </div>
+
+        <div class="ui-card border rounded-2xl p-5 mt-4">
+          <p class="text-xs font-bold uppercase tracking-wider ui-accent-text mb-1">Menu di navigazione (mobile)</p>
+          <p class="ui-muted text-xs mb-3">Riordina le sezioni con le frecce e scegli se mostrare il testo sotto le icone, per recuperare spazio nella barra in basso senza invadere l'area dei gesti dello smartphone.</p>
+          <button id="nav-labels-toggle-btn" onclick="toggleNavLabels()" class="ui-btn-sec px-3 py-1.5 rounded-lg text-xs font-semibold mb-3"></button>
+          <div id="nav-order-list" class="flex flex-col gap-2"></div>
+        </div>
+
+        <div class="ui-card border rounded-2xl p-5 mt-4">
+          <p class="text-xs font-bold uppercase tracking-wider ui-accent-text mb-1">Dimensione copertine</p>
+          <p class="ui-muted text-xs mb-3">Lato massimo a cui vengono ridimensionate le copertine caricate da file o da URL (compressione JPEG qualità 0.75). Vale solo per le copertine caricate da ora in poi.</p>
+          <div id="cover-size-picker" class="grid grid-cols-3 gap-2"></div>
+        </div>
+
+        <div class="ui-card border rounded-2xl p-5 mt-4">
+          <p class="text-xs font-bold uppercase tracking-wider ui-accent-text mb-1">Backup e Ripristino</p>
+          <p class="ui-muted text-xs mb-3">Esporta l'intero database (Opere, Edizioni, Istanze, Sessioni di lettura, impostazioni) in un file JSON, o importane uno per ripristinare/sostituire i dati attuali.</p>
+          <div class="flex flex-col gap-2">
+            <button onclick="exportDatabaseToFile()" class="ui-accent-bg text-white py-2 rounded-lg text-xs font-semibold">⬇️ Esporta database (JSON)</button>
+            <label class="ui-btn-sec py-2 rounded-lg text-xs font-semibold text-center cursor-pointer">
+              ⬆️ Importa database (JSON)
+              <input type="file" accept="application/json" onchange="onImportFileSelected(this.files[0]); this.value='';" class="hidden">
+            </label>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ===================== BOTTOM NAV (mobile) ===================== -->
+  <nav id="bottom-nav" class="md:hidden ui-nav bottom-nav-safe fixed bottom-0 inset-x-0 border-t flex justify-around z-20 backdrop-blur-md">
+    <div id="nav-mobile-slot" class="flex w-full justify-around"></div>
+  </nav>
+
+  <!-- ===================== DRAWER FILTRI (mobile) ===================== -->
+  <div id="drawer-backdrop" onclick="closeDrawer()" class="md:hidden fixed inset-0 bg-black/50 z-30 hidden"></div>
+  <aside id="mobile-drawer" class="md:hidden fixed top-0 left-0 h-full w-[80%] max-w-xs ui-card z-40 p-4 -translate-x-full transition-transform duration-200 overflow-y-auto">
+    <div class="flex items-center justify-between mb-4">
+      <p class="font-bold">Filtri</p>
+      <button onclick="closeDrawer()" class="ui-btn-sec w-8 h-8 rounded-lg font-bold">✕</button>
+    </div>
+    <div id="drawer-filters-slot"></div>
+  </aside>
+
+  <!-- ===================== DATALIST TASSONOMIA (autocompletamento) ===================== -->
+  <datalist id="datalist-subgenres"></datalist>
+  <datalist id="datalist-microgenres"></datalist>
+  <datalist id="datalist-modifiers"></datalist>
+
+  <!-- ===================== MODALE OPERA (L1) ===================== -->
+  <div id="modal-opera" class="hidden fixed inset-0 z-50 flex items-end md:items-center justify-center">
+    <div class="absolute inset-0 bg-black/50" onclick="closeModal('modal-opera')"></div>
+    <div class="relative ui-card border w-full md:w-[34rem] max-h-[92vh] overflow-y-auto p-5 rounded-t-2xl md:rounded-2xl">
+      <div class="flex items-center justify-between mb-4">
+        <p id="modal-opera-title" class="font-bold text-lg">Nuova Opera</p>
+        <button onclick="closeModal('modal-opera')" class="ui-btn-sec w-8 h-8 rounded-lg font-bold shrink-0">✕</button>
+      </div>
+      <input type="hidden" id="opera-id">
+      <div class="flex flex-col gap-3">
+        <div>
+          <label class="text-xs font-semibold ui-muted">Titolo *</label>
+          <input id="opera-title" type="text" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted">Autore *</label>
+          <input id="opera-author" type="text" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted">Descrizione / trama concettuale</label>
+          <textarea id="opera-description" rows="2" class="ui-input w-full p-2.5 rounded-xl border mt-1"></textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs font-semibold ui-muted">Serie</label>
+            <input id="opera-series" type="text" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+          </div>
+          <div>
+            <label class="text-xs font-semibold ui-muted">N° volume</label>
+            <input id="opera-series-index" type="number" min="1" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+          </div>
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted">Macro-categoria *</label>
+          <select id="opera-macro" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+            <option value="Narrativa">Narrativa</option>
+            <option value="Saggistica">Saggistica</option>
+            <option value="Poesia & Teatro">Poesia & Teatro</option>
+            <option value="Fumetti & Illustrati">Fumetti & Illustrati</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted">Sottogeneri <span class="opacity-60">(separati da virgola)</span></label>
+          <input id="opera-subgenres" type="text" list="datalist-subgenres" placeholder="es. Fantasy, Filosofia" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted">Micro-generi <span class="opacity-60">(separati da virgola)</span></label>
+          <input id="opera-microgenres" type="text" list="datalist-microgenres" placeholder="es. Epica" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted">Modificatori <span class="opacity-60">(separati da virgola)</span></label>
+          <input id="opera-modifiers" type="text" list="datalist-modifiers" placeholder="es. Classici" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+        </div>
+      </div>
+      <div class="flex items-center justify-between mt-5 gap-2">
+        <button id="opera-delete-btn" onclick="deleteOperaFromModal()" class="hidden text-red-500 text-xs font-semibold px-3 py-2 rounded-xl">🗑 Elimina Opera</button>
+        <div class="flex gap-2 ml-auto">
+          <button onclick="closeModal('modal-opera')" class="ui-btn-sec px-4 py-2 rounded-xl text-sm font-semibold">Annulla</button>
+          <button onclick="saveOperaFromForm()" class="ui-accent-bg text-white px-4 py-2 rounded-xl text-sm font-semibold">Salva</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODALE EDIZIONE (L2) ===================== -->
+  <div id="modal-edition" class="hidden fixed inset-0 z-50 flex items-end md:items-center justify-center">
+    <div class="absolute inset-0 bg-black/50" onclick="closeModal('modal-edition')"></div>
+    <div class="relative ui-card border w-full md:w-[28rem] max-h-[92vh] overflow-y-auto p-5 rounded-t-2xl md:rounded-2xl">
+      <div class="flex items-center justify-between mb-4">
+        <p id="modal-edition-title" class="font-bold text-lg">Nuova Edizione</p>
+        <button onclick="closeModal('modal-edition')" class="ui-btn-sec w-8 h-8 rounded-lg font-bold shrink-0">✕</button>
+      </div>
+      <input type="hidden" id="edition-opera-id">
+      <input type="hidden" id="edition-id">
+      <div class="flex flex-col gap-3">
+        <div>
+          <label class="text-xs font-semibold ui-muted">Editore</label>
+          <input id="edition-publisher" type="text" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs font-semibold ui-muted">Anno</label>
+            <input id="edition-year" type="number" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+          </div>
+          <div>
+            <label class="text-xs font-semibold ui-muted">Lingua</label>
+            <input id="edition-language" type="text" value="Italiano" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center justify-between flex-wrap gap-1">
+            <label class="text-xs font-semibold ui-muted">Titolo alternativo di questa edizione <span class="opacity-60">(opzionale)</span></label>
+            <button type="button" onclick="copyOperaTitleToEdition()" class="text-[10px] ui-accent-text font-semibold">📋 Copia da Titolo Opera</button>
+          </div>
+          <input id="edition-alternate-title" type="text" placeholder="es. una traduzione rivista con un titolo diverso" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+        </div>
+        <div>
+          <div class="flex items-center justify-between">
+            <label class="text-xs font-semibold ui-muted">Note edizione / quarta di copertina</label>
+            <button type="button" onclick="copyOperaDescriptionToEdition()" class="text-[10px] ui-accent-text font-semibold">📋 Copia da Descrizione Opera</button>
+          </div>
+          <textarea id="edition-description" rows="2" class="ui-input w-full p-2.5 rounded-xl border mt-1"></textarea>
+        </div>
+      </div>
+      <div class="flex items-center justify-between mt-5 gap-2">
+        <button id="edition-delete-btn" onclick="deleteEditionFromModal()" class="hidden text-red-500 text-xs font-semibold px-3 py-2 rounded-xl">🗑 Elimina Edizione</button>
+        <div class="flex gap-2 ml-auto">
+          <button onclick="closeModal('modal-edition')" class="ui-btn-sec px-4 py-2 rounded-xl text-sm font-semibold">Annulla</button>
+          <button onclick="saveEditionFromForm()" class="ui-accent-bg text-white px-4 py-2 rounded-xl text-sm font-semibold">Salva</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODALE ISTANZA (L3) ===================== -->
+  <div id="modal-instance" class="hidden fixed inset-0 z-50 flex items-end md:items-center justify-center">
+    <div class="absolute inset-0 bg-black/50" onclick="closeModal('modal-instance')"></div>
+    <div class="relative ui-card border w-full md:w-[30rem] max-h-[92vh] overflow-y-auto p-5 rounded-t-2xl md:rounded-2xl">
+      <div class="flex items-center justify-between mb-4">
+        <p id="modal-instance-title" class="font-bold text-lg">Nuova Istanza</p>
+        <button onclick="closeModal('modal-instance')" class="ui-btn-sec w-8 h-8 rounded-lg font-bold shrink-0">✕</button>
+      </div>
+      <input type="hidden" id="instance-opera-id">
+      <input type="hidden" id="instance-edition-id">
+      <input type="hidden" id="instance-id">
+      <div class="flex flex-col gap-3">
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs font-semibold ui-muted">Formato</label>
+            <select id="instance-format" onchange="onInstanceFormatChange()" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+              <option value="Cartaceo">Cartaceo</option>
+              <option value="E-book">E-book</option>
+              <option value="Audiobook">Audiobook</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs font-semibold ui-muted">Possesso</label>
+            <select id="instance-ownership" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+              <option value="owned">Posseduto</option>
+              <option value="wishlist">Wishlist</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted">ISBN</label>
+          <input id="instance-isbn" type="text" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted">Collocazione <span class="opacity-60">(es. Scaffale, Kindle...)</span></label>
+          <input id="instance-location" type="text" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+        </div>
+        <div id="instance-pages-wrap">
+          <label class="text-xs font-semibold ui-muted">Pagine totali</label>
+          <input id="instance-total-pages" type="number" min="0" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+        </div>
+        <div id="instance-minutes-wrap" class="hidden">
+          <label class="text-xs font-semibold ui-muted">Minuti totali</label>
+          <input id="instance-total-minutes" type="number" min="0" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted block mb-1">Copertina <span class="opacity-60">(ridimensionata automaticamente a 200px)</span></label>
+          <input type="hidden" id="instance-cover-base64">
+          <div class="flex items-start gap-3">
+            <img id="instance-cover-preview" class="hidden w-16 h-24 object-cover rounded-lg border ui-input" alt="Copertina">
+            <div class="flex-1 flex flex-col gap-1.5">
+              <input type="file" accept="image/*" onchange="onCoverFileSelected(this.files[0])" class="text-[10px]">
+              <div class="flex gap-1">
+                <input id="instance-cover-url" type="text" placeholder="...oppure incolla URL immagine" class="ui-input flex-1 p-1.5 rounded-lg border text-[10px]">
+                <button type="button" onclick="onCoverUrlDownload()" class="ui-btn-sec px-2 py-1 rounded-lg text-[10px] font-semibold shrink-0">Scarica</button>
+              </div>
+              <button type="button" onclick="removeCoverImage()" class="text-red-500 text-[10px] font-semibold self-start">Rimuovi copertina</button>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="flex items-center justify-between flex-wrap gap-1">
+            <label class="text-xs font-semibold ui-muted">Note copia</label>
+            <div class="flex gap-2">
+              <button type="button" onclick="copyOperaDescriptionToInstance()" class="text-[10px] ui-accent-text font-semibold">📋 Da Descrizione Opera</button>
+              <button type="button" onclick="copyEditionDescriptionToInstance()" class="text-[10px] ui-accent-text font-semibold">📋 Da Note Edizione</button>
+            </div>
+          </div>
+          <textarea id="instance-description" rows="2" class="ui-input w-full p-2.5 rounded-xl border mt-1"></textarea>
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted block mb-1">Valutazione</label>
+          <input type="hidden" id="instance-rating-value" value="0">
+          <div class="flex gap-1" id="rating-stars"></div>
+        </div>
+
+        <div id="instance-sessions-wrap" class="hidden">
+          <div class="ui-input rounded-xl border p-3 text-xs mb-2">
+            <span class="ui-muted">Stato attuale:</span> <span id="instance-status-display" class="font-semibold"></span>
+          </div>
+          <div class="flex items-center justify-between mb-2">
+            <p class="text-xs font-bold uppercase tracking-wider ui-accent-text">Sessioni di lettura/ascolto</p>
+            <button type="button" onclick="addSessionFromModal()" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">+ Nuova sessione</button>
+          </div>
+          <p class="ui-muted text-[11px] mb-2">Ogni rilettura/riascolto a distanza di tempo può avere una sua sessione separata, con date e progresso propri.</p>
+          <div id="instance-sessions-container" class="flex flex-col gap-3"></div>
+        </div>
+      </div>
+      <div class="flex items-center justify-between mt-5 gap-2">
+        <button id="instance-delete-btn" onclick="deleteInstanceFromModal()" class="hidden text-red-500 text-xs font-semibold px-3 py-2 rounded-xl">🗑 Elimina Istanza</button>
+        <div class="flex gap-2 ml-auto">
+          <button onclick="closeModal('modal-instance')" class="ui-btn-sec px-4 py-2 rounded-xl text-sm font-semibold">Annulla</button>
+          <button onclick="saveInstanceFromForm()" class="ui-accent-bg text-white px-4 py-2 rounded-xl text-sm font-semibold">Salva</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== MODALE RICERCA API A CASCATA ===================== -->
+  <div id="modal-api-search" class="hidden fixed inset-0 z-50 flex items-end md:items-center justify-center">
+    <div class="absolute inset-0 bg-black/50" onclick="closeModal('modal-api-search')"></div>
+    <div class="relative ui-card border w-full md:w-[38rem] max-h-[92vh] overflow-y-auto p-5 rounded-t-2xl md:rounded-2xl">
+      <div class="flex items-center justify-between mb-4">
+        <p class="font-bold text-lg">Cerca online</p>
+        <button onclick="closeModal('modal-api-search')" class="ui-btn-sec w-8 h-8 rounded-lg font-bold shrink-0">✕</button>
+      </div>
+      <div class="flex gap-2 mb-2">
+        <input id="api-search-query" type="text" placeholder="Titolo, autore o ISBN..." onkeydown="if(event.key==='Enter') runApiSearch()" class="ui-input flex-1 p-2.5 rounded-xl border text-sm">
+        <button onclick="runApiSearch()" class="ui-accent-bg text-white px-4 py-2 rounded-xl text-sm font-semibold shrink-0">Cerca</button>
+      </div>
+      <p class="ui-muted text-[11px] mb-3">Cascata automatica: Google Books → Open Library → Internet Archive (si passa al provider successivo solo se il precedente non risponde o non trova nulla). Selezionando un risultato viene creata subito un'Opera con Edizione e Istanza collegate — Macro-categoria e tassonomia andranno completate a mano, perché nessuna di queste API le fornisce.</p>
+      <div id="api-search-results" class="flex flex-col gap-2"></div>
+    </div>
+  </div>
+
+  <!-- ===================== VISUALIZZATORE COPERTINA (zoom) ===================== -->
+  <div id="cover-viewer" class="hidden fixed inset-0 z-[70] bg-black/90 flex items-center justify-center overflow-hidden"
+       onclick="onViewerBackdropClick(event)"
+       ontouchstart="onViewerTouchStart(event)" ontouchmove="onViewerTouchMove(event)" ontouchend="onViewerTouchEnd(event)">
+    <img id="cover-viewer-img" ondblclick="resetCoverZoom()" class="max-w-none select-none" style="touch-action:none; transition: transform 0.1s ease-out;">
+    <button onclick="closeCoverViewer()" class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 text-white text-lg font-bold flex items-center justify-center">✕</button>
+    <div class="hidden md:flex absolute bottom-6 left-1/2 -translate-x-1/2 gap-2">
+      <button onclick="zoomCover(0.25)" class="w-10 h-10 rounded-full bg-white/20 text-white text-lg font-bold flex items-center justify-center">+</button>
+      <button onclick="resetCoverZoom()" class="px-3 h-10 rounded-full bg-white/20 text-white text-xs font-bold">1:1</button>
+      <button onclick="zoomCover(-0.25)" class="w-10 h-10 rounded-full bg-white/20 text-white text-lg font-bold flex items-center justify-center">−</button>
+    </div>
+  </div>
+
+<script>
+/* =====================================================================================
+   OPERA CODEX — MOTORE DATI (invariato dal Punto 1) + IMPALCATURA UI (Punto 2)
+   Storage: IndexedDB. Store "opere" (Opera/Edizione/Istanza annidate) + "settings".
+   ===================================================================================== */
+
+const DB_NAME = 'OperaCodexDB';
+const DB_VERSION = 2; // bump da 1 a 2: aggiunge lo store "settings" anche a chi ha già aperto il Punto 1
+const STORE_OPERE = 'opere';
+const STORE_SETTINGS = 'settings';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_OPERE)) db.createObjectStore(STORE_OPERE, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(STORE_SETTINGS)) db.createObjectStore(STORE_SETTINGS, { keyPath: 'key' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+let dbInstance = null;
+async function getDB() { if (!dbInstance) dbInstance = await openDB(); return dbInstance; }
+
+async function storeFor(name, mode) {
+  const db = await getDB();
+  return db.transaction(name, mode).objectStore(name);
+}
+
+async function dbGetAll(name = STORE_OPERE) {
+  const store = await storeFor(name, 'readonly');
+  return new Promise((resolve, reject) => { const req = store.getAll(); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); });
+}
+async function dbGet(id, name = STORE_OPERE) {
+  const store = await storeFor(name, 'readonly');
+  return new Promise((resolve, reject) => { const req = store.get(id); req.onsuccess = () => resolve(req.result || null); req.onerror = () => reject(req.error); });
+}
+async function dbSave(record, name = STORE_OPERE) {
+  const store = await storeFor(name, 'readwrite');
+  return new Promise((resolve, reject) => { const req = store.put(record); req.onsuccess = () => resolve(record); req.onerror = () => reject(req.error); });
+}
+async function dbDelete(id, name = STORE_OPERE) {
+  const store = await storeFor(name, 'readwrite');
+  return new Promise((resolve, reject) => { const req = store.delete(id); req.onsuccess = () => resolve(true); req.onerror = () => reject(req.error); });
+}
+
+async function getSetting(key, fallback = null) {
+  const rec = await dbGet(key, STORE_SETTINGS);
+  return rec ? rec.value : fallback;
+}
+async function setSetting(key, value) {
+  return dbSave({ key, value }, STORE_SETTINGS);
+}
+
+// --- Utility ----------------------------------------------------------------------------
+function uid(prefix) { return prefix + '_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5); }
+function getLocalDateString(d = new Date()) {
+  const yyyy = d.getFullYear(), mm = String(d.getMonth() + 1).padStart(2, '0'), dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+function normalizeTag(raw) {
+  if (!raw) return '';
+  const trimmed = String(raw).trim().replace(/\s+/g, ' ');
+  if (!trimmed) return '';
+  return trimmed.replace(/\p{L}+/gu, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+function addNormalizedTag(list, raw) {
+  const norm = normalizeTag(raw);
+  if (!norm) return list;
+  return list.some(t => t.toLowerCase() === norm.toLowerCase()) ? list : [...list, norm];
+}
+function normalizeTagList(rawList) { return (rawList || []).reduce((acc, t) => addNormalizedTag(acc, t), []); }
+async function getAllTags(level) {
+  const opere = await dbGetAll();
+  const set = new Set();
+  opere.forEach(o => (o[level] || []).forEach(t => set.add(t)));
+  return [...set].sort((a, b) => a.localeCompare(b, 'it'));
+}
+
+// --- GESTIONE TASSONOMIA (rinomina/eliminazione/fusione a cascata su tutte le Opere) --------
+
+async function getTagUsageCounts(level) {
+  const opere = await dbGetAll();
+  const counts = new Map();
+  opere.forEach(o => (o[level] || []).forEach(t => counts.set(t, (counts.get(t) || 0) + 1)));
+  return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => a.tag.localeCompare(b.tag, 'it'));
+}
+
+async function renameTagEverywhere(level, oldTag, newTagRaw) {
+  const newTag = normalizeTag(newTagRaw);
+  if (!newTag || newTag === oldTag) return;
+  const opere = await dbGetAll();
+  for (const opera of opere) {
+    if (!(opera[level] || []).includes(oldTag)) continue;
+    opera[level] = addNormalizedTag(opera[level].filter(t => t !== oldTag), newTag);
+    await dbSave(opera);
+  }
+}
+
+async function deleteTagEverywhere(level, tag) {
+  const opere = await dbGetAll();
+  for (const opera of opere) {
+    if (!(opera[level] || []).includes(tag)) continue;
+    opera[level] = opera[level].filter(t => t !== tag);
+    await dbSave(opera);
+  }
+}
+
+async function mergeTagsEverywhere(level, tagsToMerge, canonicalNameRaw) {
+  const canonical = normalizeTag(canonicalNameRaw);
+  if (!canonical) return;
+  const opere = await dbGetAll();
+  for (const opera of opere) {
+    if (!(opera[level] || []).some(t => tagsToMerge.includes(t))) continue;
+    opera[level] = addNormalizedTag(opera[level].filter(t => !tagsToMerge.includes(t)), canonical);
+    await dbSave(opera);
+  }
+}
+
+// --- OPERA (L1) ---------------------------------------------------------------------------
+function newOperaSkeleton({ title, author, description = '', series = null, seriesIndex = null, macro, subgenres = [], microgenres = [], modifiers = [] }) {
+  return { id: uid('op'), title, author, description, series, seriesIndex, macro,
+    subgenres: normalizeTagList(subgenres), microgenres: normalizeTagList(microgenres), modifiers: normalizeTagList(modifiers),
+    createdAt: getLocalDateString(), editions: [] };
+}
+async function createOpera(data) { const opera = newOperaSkeleton(data); await dbSave(opera); return opera; }
+async function updateOpera(operaId, patch) {
+  const opera = await dbGet(operaId);
+  if (!opera) throw new Error('Opera non trovata: ' + operaId);
+  ['subgenres', 'microgenres', 'modifiers'].forEach(key => { if (patch[key]) patch[key] = normalizeTagList(patch[key]); });
+  const updated = { ...opera, ...patch, id: opera.id, editions: opera.editions };
+  await dbSave(updated); return updated;
+}
+async function deleteOpera(operaId) { return dbDelete(operaId); }
+
+// --- EDIZIONE (L2) --------------------------------------------------------------------------
+function newEditionSkeleton({ publisher = '', year = null, language = 'Italiano', description = '', alternateTitle = '' }) {
+  return { id: uid('ed'), publisher, year, language, description, alternateTitle, createdAt: getLocalDateString(), instances: [] };
+}
+async function addEdition(operaId, data) {
+  const opera = await dbGet(operaId);
+  if (!opera) throw new Error('Opera non trovata: ' + operaId);
+  const edition = newEditionSkeleton(data);
+  opera.editions.push(edition); await dbSave(opera); return edition;
+}
+async function updateEdition(operaId, editionId, patch) {
+  const opera = await dbGet(operaId);
+  const edition = opera?.editions.find(e => e.id === editionId);
+  if (!edition) throw new Error('Edizione non trovata: ' + editionId);
+  Object.assign(edition, patch); await dbSave(opera); return edition;
+}
+async function deleteEdition(operaId, editionId) {
+  const opera = await dbGet(operaId);
+  if (!opera) throw new Error('Opera non trovata: ' + operaId);
+  opera.editions = opera.editions.filter(e => e.id !== editionId); await dbSave(opera);
+}
+
+// --- ISTANZA (L3) ---------------------------------------------------------------------------
+function findInstance(opera, editionId, instanceId) {
+  const edition = opera?.editions.find(e => e.id === editionId);
+  return edition?.instances.find(i => i.id === instanceId);
+}
+function newInstanceSkeleton({ ownership = 'owned', format = 'E-book', isbn = '', rating = 0, location = '', description = '', coverBase64 = '', totalPages = null, totalMinutes = null }) {
+  return { id: uid('inst'), ownership, format, isbn, rating, location, description, coverBase64,
+    totalPages, totalMinutes, createdAt: getLocalDateString(), sessions: [] };
+}
+async function addInstance(operaId, editionId, data) {
+  const opera = await dbGet(operaId);
+  const edition = opera?.editions.find(e => e.id === editionId);
+  if (!edition) throw new Error('Edizione non trovata: ' + editionId);
+  const instance = newInstanceSkeleton(data);
+  edition.instances.push(instance); await dbSave(opera); return instance;
+}
+async function updateInstance(operaId, editionId, instanceId, patch) {
+  const opera = await dbGet(operaId);
+  const instance = findInstance(opera, editionId, instanceId);
+  if (!instance) throw new Error('Istanza non trovata: ' + instanceId);
+  Object.assign(instance, patch); await dbSave(opera); return instance;
+}
+async function deleteInstance(operaId, editionId, instanceId) {
+  const opera = await dbGet(operaId);
+  const edition = opera?.editions.find(e => e.id === editionId);
+  if (!edition) throw new Error('Edizione non trovata: ' + editionId);
+  edition.instances = edition.instances.filter(i => i.id !== instanceId); await dbSave(opera);
+}
+
+// --- SESSIONI DI LETTURA/ASCOLTO -------------------------------------------------------------
+// Un'Istanza può avere più Sessioni (riletture/riascolti a distanza di tempo), ciascuna con le
+// proprie date di inizio/fine e il proprio storico giornaliero di progresso.
+
+const SESSION_STATUS_PRIORITY = { 'In Lettura': 4, 'Sospeso': 3, 'Completato': 2, 'Abbandonato': 1 };
+
+// Sessione "in evidenza" di un'Istanza (priorità: In Lettura > Sospeso > Completato > Abbandonato,
+// a parità di priorità vince la più recente per data di inizio). Usata sia per lo stato mostrato
+// nel catalogo sia per il dettaglio pagina/minuto/percentuale.
+function getInstanceRepresentativeSession(instance) {
+  if (!instance.sessions || instance.sessions.length === 0) return null;
+  const sorted = [...instance.sessions].sort((a, b) => {
+    const byPriority = (SESSION_STATUS_PRIORITY[b.status] || 0) - (SESSION_STATUS_PRIORITY[a.status] || 0);
+    return byPriority !== 0 ? byPriority : (b.startDate || '').localeCompare(a.startDate || '');
+  });
+  return sorted[0];
+}
+function getInstanceDisplayStatus(instance) {
+  const session = getInstanceRepresentativeSession(instance);
+  return session ? session.status : 'Da Leggere';
+}
+
+function newSessionSkeleton() {
+  return { id: uid('sess'), startDate: null, endDate: null, status: 'In Lettura', currentUnit: 0, readingLog: [] };
+}
+async function addSession(operaId, editionId, instanceId) {
+  const opera = await dbGet(operaId);
+  const instance = findInstance(opera, editionId, instanceId);
+  if (!instance) throw new Error('Istanza non trovata: ' + instanceId);
+  const session = newSessionSkeleton();
+  instance.sessions.push(session); await dbSave(opera); return session;
+}
+async function deleteSession(operaId, editionId, instanceId, sessionId) {
+  const opera = await dbGet(operaId);
+  const instance = findInstance(opera, editionId, instanceId);
+  if (!instance) throw new Error('Istanza non trovata: ' + instanceId);
+  instance.sessions = instance.sessions.filter(s => s.id !== sessionId); await dbSave(opera);
+}
+async function updateSessionStatus(operaId, editionId, instanceId, sessionId, status) {
+  const opera = await dbGet(operaId);
+  const instance = findInstance(opera, editionId, instanceId);
+  const session = instance.sessions.find(s => s.id === sessionId);
+  if (!session) throw new Error('Sessione non trovata: ' + sessionId);
+  session.status = status; await dbSave(opera); return session;
+}
+async function updateSessionDates(operaId, editionId, instanceId, sessionId, { startDate, endDate }) {
+  const opera = await dbGet(operaId);
+  const instance = findInstance(opera, editionId, instanceId);
+  const session = instance.sessions.find(s => s.id === sessionId);
+  if (!session) throw new Error('Sessione non trovata: ' + sessionId);
+  if (startDate !== undefined) session.startDate = startDate || null;
+  if (endDate !== undefined) session.endDate = endDate || null;
+  await dbSave(opera); return session;
+}
+
+// Stato/date di una Sessione calcolati dal progresso raggiunto: mai "Da Leggere" (una sessione
+// esiste solo se già avviata). Non tocca lo stato se è stato messo manualmente su Sospeso/Abbandonato
+// e non si sta registrando nuovo progresso.
+function computeSessionState(reachedUnit, totalUnit, existingStartDate, existingEndDate) {
+  const today = getLocalDateString();
+  let startDate = existingStartDate || today;
+  let endDate = existingEndDate || null;
+  let status;
+  if (totalUnit > 0 && reachedUnit >= totalUnit) { status = 'Completato'; if (!endDate) endDate = today; }
+  else { status = 'In Lettura'; endDate = null; }
+  return { status, startDate, endDate };
+}
+
+// Applica un nuovo valore assoluto raggiunto ad oggi (l'utente comunica "sono arrivato a pagina/
+// minuto X", non quante unità ha letto in più: il calcolo della differenza rispetto al giorno
+// precedente lo fa l'app). 1 record di storico per giorno, con correzione se si registra più
+// volte nello stesso giorno o si torna indietro.
+function applyProgressToSession(session, totalUnit, newReachedUnit) {
+  const today = getLocalDateString();
+  const priorCumulative = session.readingLog
+    .filter(l => l.date < today)
+    .reduce((max, l) => Math.max(max, l.reachedUnit), 0);
+  const unitsReadToday = newReachedUnit - priorCumulative;
+  let log = session.readingLog.find(l => l.date === today);
+  if (log) { log.reachedUnit = newReachedUnit; log.unitsRead = unitsReadToday; }
+  else { session.readingLog.push({ date: today, unitsRead: unitsReadToday, reachedUnit: newReachedUnit }); }
+  session.currentUnit = newReachedUnit;
+  const { status, startDate, endDate } = computeSessionState(newReachedUnit, totalUnit, session.startDate, session.endDate);
+  session.status = status; session.startDate = startDate; session.endDate = endDate;
+}
+
+function getInstanceTotalUnit(instance) {
+  return instance.format === 'Audiobook' ? instance.totalMinutes : instance.totalPages;
+}
+
+async function setSessionProgressAbsolute(operaId, editionId, instanceId, sessionId, reachedUnit) {
+  const opera = await dbGet(operaId);
+  const instance = findInstance(opera, editionId, instanceId);
+  const session = instance.sessions.find(s => s.id === sessionId);
+  if (!session) throw new Error('Sessione non trovata: ' + sessionId);
+  const totalUnit = getInstanceTotalUnit(instance);
+  applyProgressToSession(session, totalUnit, Math.max(0, Math.round(reachedUnit)));
+  await dbSave(opera); return session;
+}
+async function updateLogEntryDate(operaId, editionId, instanceId, sessionId, oldDate, newDate) {
+  const opera = await dbGet(operaId);
+  const instance = findInstance(opera, editionId, instanceId);
+  const session = instance.sessions.find(s => s.id === sessionId);
+  if (!session) throw new Error('Sessione non trovata: ' + sessionId);
+  const entry = session.readingLog.find(l => l.date === oldDate);
+  if (!entry) throw new Error('Registrazione non trovata per la data ' + oldDate);
+  const existing = session.readingLog.find(l => l.date === newDate && l !== entry);
+  if (existing) {
+    existing.unitsRead += entry.unitsRead;
+    existing.reachedUnit = Math.max(existing.reachedUnit, entry.reachedUnit);
+    session.readingLog = session.readingLog.filter(l => l !== entry);
+  } else {
+    entry.date = newDate;
+  }
+  session.readingLog.sort((a, b) => a.date.localeCompare(b.date));
+  await dbSave(opera); return session;
+}
+
+window.OperaCodex = {
+  createOpera, updateOpera, deleteOpera, addEdition, updateEdition, deleteEdition,
+  addInstance, updateInstance, deleteInstance,
+  addSession, deleteSession, updateSessionStatus, updateSessionDates,
+  setSessionProgressAbsolute, updateLogEntryDate,
+  getInstanceDisplayStatus, getInstanceRepresentativeSession, getInstanceTotalUnit,
+  getAllTags, getTagUsageCounts, renameTagEverywhere, deleteTagEverywhere, mergeTagsEverywhere,
+  normalizeTag, dbGet, dbGetAll, dbDelete, getSetting, setSetting,
+};
+
+/* =====================================================================================
+   IMPALCATURA UI — Punto 2
+   Nessuna logica di dominio qui: solo navigazione tra sezioni, layout responsivo
+   (sidebar persistente su desktop, bottom-nav + drawer a comparsa su mobile) e temi.
+   ===================================================================================== */
+
+const SECTIONS = [
+  { key: 'catalogo',     icon: '📚', label: 'Catalogo' },
+  { key: 'tassonomia',   icon: '🏷️', label: 'Tassonomia' },
+  { key: 'impostazioni', icon: '⚙️', label: 'Impostazioni' },
+];
+const DEFAULT_NAV_ORDER = SECTIONS.map(s => s.key);
+
+const THEMES = [
+  { key: 'theme-dark',    label: '🌙 Scuro' },
+  { key: 'theme-light',   label: '☀️ Chiaro' },
+  { key: 'theme-nordic',  label: '❄️ Nordic' },
+  { key: 'theme-monokai', label: '🎨 Monokai' },
+  { key: 'theme-paper',   label: '📜 Paper' },
+  { key: 'theme-soft',    label: '🌾 Soft' },
+];
+const COVER_SIZE_OPTIONS = [200, 400, 600];
+
+let currentSection = 'catalogo';
+let currentTheme = 'theme-soft';
+let currentNavOrder = [...DEFAULT_NAV_ORDER];
+let navShowLabels = true;
+let coverMaxSize = 200;
+
+function getOrderedSections() {
+  const valid = Array.isArray(currentNavOrder) && currentNavOrder.length === SECTIONS.length
+    && currentNavOrder.every(k => SECTIONS.some(s => s.key === k));
+  const order = valid ? currentNavOrder : DEFAULT_NAV_ORDER;
+  return order.map(key => SECTIONS.find(s => s.key === key)).filter(Boolean);
+}
+
+// --- STATO DI FILTRO / ORDINAMENTO / PAGINAZIONE DEL CATALOGO ----------------------------
+const STATUS_OPTIONS = ['Da Leggere', 'In Lettura', 'Completato', 'Sospeso', 'Abbandonato'];
+const MACRO_OPTIONS = ['Narrativa', 'Saggistica', 'Poesia & Teatro', 'Fumetti & Illustrati'];
+const EMPTY_TAG = '__NESSUNO__'; // valore sentinella per filtrare Opere senza tag in un dato livello
+
+let catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [] };
+let catalogSort = 'title-asc';
+let catalogPageSize = 25; // 10 | 25 | 50 | 'all'
+let catalogPage = 1;
+
+async function toggleFilterValue(key, value) {
+  const list = catalogFilters[key];
+  const idx = list.indexOf(value);
+  if (idx === -1) list.push(value); else list.splice(idx, 1);
+  catalogPage = 1;
+  await renderFiltersPanels();
+  await renderCatalogo();
+}
+async function setSearchFilter(value) {
+  catalogFilters.search = value;
+  catalogPage = 1;
+  document.querySelectorAll('.catalog-search-input').forEach(el => { if (el.value !== value) el.value = value; });
+  await renderCatalogo();
+}
+async function setSortOrder(value) {
+  catalogSort = value;
+  document.querySelectorAll('.catalog-sort-select').forEach(el => el.value = value);
+  await renderCatalogo();
+}
+async function setPageSize(value) {
+  catalogPageSize = value === 'all' ? 'all' : Number(value);
+  catalogPage = 1;
+  document.querySelectorAll('.catalog-pagesize-select').forEach(el => el.value = value);
+  await renderCatalogo();
+}
+async function goToPage(page) {
+  catalogPage = page;
+  await renderCatalogo();
+  const list = document.getElementById('catalogo-list');
+  if (list && typeof list.scrollIntoView === 'function') list.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+async function resetCatalogFilters() {
+  catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [] };
+  catalogPage = 1;
+  document.querySelectorAll('.catalog-search-input').forEach(el => el.value = '');
+  await renderFiltersPanels();
+  await renderCatalogo();
+}
+
+function pillButton(label, active, onclick) {
+  return `<button type="button" onclick="${onclick}"
+    class="px-2 py-1 rounded-lg text-[11px] font-semibold border ${active ? 'ui-accent-bg text-white border-transparent' : 'ui-btn-sec border-gray-500/20'}">${label}</button>`;
+}
+
+async function renderFiltersPanel(suffix) {
+  const [subgenres, microgenres, modifiers] = await Promise.all([
+    getAllTags('subgenres'), getAllTags('microgenres'), getAllTags('modifiers'),
+  ]);
+  return `
+    <p class="text-[10px] font-bold uppercase tracking-wider ui-accent-text mb-2">Filtri</p>
+
+    <input type="text" placeholder="Cerca..." value="${catalogFilters.search}" oninput="setSearchFilter(this.value)"
+      class="catalog-search-input ui-input w-full p-2 rounded-lg border text-xs mb-3">
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Macro-categoria</p>
+    <div class="flex flex-wrap gap-1 mb-3">
+      ${MACRO_OPTIONS.map(m => pillButton(m, catalogFilters.macro.includes(m), `toggleFilterValue('macro','${m}')`)).join('')}
+    </div>
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Sottogenere</p>
+    <div class="flex flex-wrap gap-1 mb-3">
+      ${pillButton('— Nessuno —', catalogFilters.subgenres.includes(EMPTY_TAG), `toggleFilterValue('subgenres','${EMPTY_TAG}')`)}
+      ${subgenres.map(t => pillButton(t, catalogFilters.subgenres.includes(t), `toggleFilterValue('subgenres','${t}')`)).join('')}
+    </div>
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Micro-genere</p>
+    <div class="flex flex-wrap gap-1 mb-3">
+      ${pillButton('— Nessuno —', catalogFilters.microgenres.includes(EMPTY_TAG), `toggleFilterValue('microgenres','${EMPTY_TAG}')`)}
+      ${microgenres.map(t => pillButton(t, catalogFilters.microgenres.includes(t), `toggleFilterValue('microgenres','${t}')`)).join('')}
+    </div>
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Modificatori</p>
+    <div class="flex flex-wrap gap-1 mb-3">
+      ${pillButton('— Nessuno —', catalogFilters.modifiers.includes(EMPTY_TAG), `toggleFilterValue('modifiers','${EMPTY_TAG}')`)}
+      ${modifiers.map(t => pillButton(t, catalogFilters.modifiers.includes(t), `toggleFilterValue('modifiers','${t}')`)).join('')}
+    </div>
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Stato (per formato fisico/e-book; per audiolibri corrisponde a Da Ascoltare/In Ascolto)</p>
+    <div class="flex flex-wrap gap-1 mb-3">
+      ${STATUS_OPTIONS.map(s => pillButton(s, catalogFilters.status.includes(s), `toggleFilterValue('status','${s}')`)).join('')}
+    </div>
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Formato</p>
+    <div class="flex flex-wrap gap-1 mb-3">
+      ${pillButton('Cartaceo', catalogFilters.format.includes('Cartaceo'), `toggleFilterValue('format','Cartaceo')`)}
+      ${pillButton('E-book', catalogFilters.format.includes('E-book'), `toggleFilterValue('format','E-book')`)}
+      ${pillButton('Audiobook', catalogFilters.format.includes('Audiobook'), `toggleFilterValue('format','Audiobook')`)}
+    </div>
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Possesso</p>
+    <div class="flex flex-wrap gap-1 mb-3">
+      ${pillButton('Posseduto', catalogFilters.ownership.includes('owned'), `toggleFilterValue('ownership','owned')`)}
+      ${pillButton('Wishlist', catalogFilters.ownership.includes('wishlist'), `toggleFilterValue('ownership','wishlist')`)}
+    </div>
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Pagina catalogo</p>
+    <select onchange="setPageSize(this.value)" class="catalog-pagesize-select ui-input w-full p-2 rounded-lg border text-xs mb-3">
+      <option value="10" ${catalogPageSize === 10 ? 'selected' : ''}>10 per pagina</option>
+      <option value="25" ${catalogPageSize === 25 ? 'selected' : ''}>25 per pagina</option>
+      <option value="50" ${catalogPageSize === 50 ? 'selected' : ''}>50 per pagina</option>
+      <option value="all" ${catalogPageSize === 'all' ? 'selected' : ''}>Tutte</option>
+    </select>
+
+    <button type="button" onclick="resetCatalogFilters()" class="ui-btn-sec w-full py-2 rounded-lg text-xs font-semibold">✕ Azzera filtri</button>
+  `;
+}
+
+async function renderFiltersPanels() {
+  const html = await renderFiltersPanel();
+  document.getElementById('sidebar-filters-slot').innerHTML = html;
+  document.getElementById('drawer-filters-slot').innerHTML = html;
+}
+
+// vertical = colonna della sidebar desktop (etichette sempre visibili);
+// orizzontale = bottom-nav mobile (etichette secondo l'impostazione navShowLabels)
+function renderNav(containerId, { vertical }) {
+  const el = document.getElementById(containerId);
+  const ordered = getOrderedSections();
+  const showLabel = vertical ? true : navShowLabels;
+  el.innerHTML = ordered.map(s => `
+    <button onclick="switchSection('${s.key}')" data-nav="${s.key}"
+      class="nav-btn flex ${vertical ? 'items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold w-full text-left' : 'flex-col items-center justify-center gap-1 p-1 rounded-xl w-1/3'}">
+      <span class="${vertical ? 'text-base' : 'text-lg'}">${s.icon}</span>
+      ${showLabel ? `<span class="${vertical ? '' : 'text-[10px] font-semibold'}">${s.label}</span>` : ''}
+    </button>`).join('');
+  updateNavActiveState();
+}
+
+function renderNavOrderList() {
+  const el = document.getElementById('nav-order-list');
+  if (!el) return;
+  const ordered = getOrderedSections();
+  el.innerHTML = ordered.map((s, idx, arr) => `
+    <div class="flex items-center justify-between ui-card border rounded-xl px-3 py-2">
+      <span class="flex items-center gap-2 text-sm font-semibold"><span>${s.icon}</span>${s.label}</span>
+      <div class="flex gap-1">
+        <button onclick="moveNavItem('${s.key}', -1)" ${idx === 0 ? 'disabled' : ''}
+          class="ui-btn-sec w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center ${idx === 0 ? 'opacity-30 cursor-not-allowed' : ''}">↑</button>
+        <button onclick="moveNavItem('${s.key}', 1)" ${idx === arr.length - 1 ? 'disabled' : ''}
+          class="ui-btn-sec w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center ${idx === arr.length - 1 ? 'opacity-30 cursor-not-allowed' : ''}">↓</button>
+      </div>
+    </div>`).join('');
+}
+
+async function moveNavItem(key, direction) {
+  const order = getOrderedSections().map(s => s.key);
+  const idx = order.indexOf(key);
+  const swapWith = idx + direction;
+  if (idx === -1 || swapWith < 0 || swapWith >= order.length) return;
+  [order[idx], order[swapWith]] = [order[swapWith], order[idx]];
+  currentNavOrder = order;
+  await setSetting('navOrder', order);
+  renderNav('nav-desktop-slot', { vertical: true });
+  renderNav('nav-mobile-slot', { vertical: false });
+  renderNavOrderList();
+}
+
+async function toggleNavLabels() {
+  navShowLabels = !navShowLabels;
+  await setSetting('navShowLabels', navShowLabels);
+  renderNav('nav-mobile-slot', { vertical: false });
+  updateNavLabelsToggleBtn();
+}
+
+function updateNavLabelsToggleBtn() {
+  const btn = document.getElementById('nav-labels-toggle-btn');
+  if (btn) btn.textContent = navShowLabels ? '🏷️ Etichette: On' : '🏷️ Etichette: Off';
+}
+
+function updateNavActiveState() {
+  document.querySelectorAll('[data-nav]').forEach(btn => {
+    const active = btn.getAttribute('data-nav') === currentSection;
+    btn.classList.toggle('ui-accent-text', active);
+    btn.classList.toggle('font-bold', active);
+    btn.classList.toggle('opacity-60', !active);
+  });
+}
+
+function switchSection(key) {
+  currentSection = key;
+  SECTIONS.forEach(s => document.getElementById('section-' + s.key).classList.toggle('hidden', s.key !== key));
+  updateNavActiveState();
+  document.getElementById('drawer-toggle-btn').classList.toggle('invisible', key !== 'catalogo');
+  closeDrawer();
+  if (key === 'tassonomia') renderTassonomia();
+}
+
+function openDrawer() {
+  document.getElementById('mobile-drawer').classList.add('open');
+  document.getElementById('drawer-backdrop').classList.remove('hidden');
+}
+function closeDrawer() {
+  document.getElementById('mobile-drawer').classList.remove('open');
+  document.getElementById('drawer-backdrop').classList.add('hidden');
+}
+
+function renderThemePicker() {
+  const el = document.getElementById('theme-picker');
+  el.innerHTML = THEMES.map(t => `
+    <button onclick="applyTheme('${t.key}')" data-theme-btn="${t.key}"
+      class="p-2 rounded-lg text-xs border border-gray-500/30 font-semibold transition">${t.label}</button>`).join('');
+  updateThemePickerActiveState();
+}
+function updateThemePickerActiveState() {
+  document.querySelectorAll('[data-theme-btn]').forEach(btn => {
+    const active = btn.getAttribute('data-theme-btn') === currentTheme;
+    btn.style.borderColor = active ? 'var(--theme-accent)' : '';
+    btn.classList.toggle('ui-accent-text', active);
+    btn.classList.toggle('font-bold', active);
+  });
+}
+
+async function applyTheme(themeKey) {
+  currentTheme = themeKey;
+  document.body.className = `${themeKey} font-sans antialiased h-full`;
+  updateThemePickerActiveState();
+  await setSetting('theme', themeKey);
+}
+
+function renderCoverSizePicker() {
+  const el = document.getElementById('cover-size-picker');
+  el.innerHTML = COVER_SIZE_OPTIONS.map(size => `
+    <button onclick="setCoverMaxSize(${size})" data-cover-size-btn="${size}"
+      class="p-2 rounded-lg text-xs border border-gray-500/30 font-semibold transition">${size}px${size === 200 ? ' (default)' : ''}</button>`).join('');
+  updateCoverSizePickerActiveState();
+}
+function updateCoverSizePickerActiveState() {
+  document.querySelectorAll('[data-cover-size-btn]').forEach(btn => {
+    const active = Number(btn.getAttribute('data-cover-size-btn')) === coverMaxSize;
+    btn.style.borderColor = active ? 'var(--theme-accent)' : '';
+    btn.classList.toggle('ui-accent-text', active);
+    btn.classList.toggle('font-bold', active);
+  });
+}
+async function setCoverMaxSize(size) {
+  coverMaxSize = size;
+  updateCoverSizePickerActiveState();
+  await setSetting('coverMaxSize', size);
+}
+
+function showInitError(err) {
+  console.error('Errore in fase di avvio:', err);
+  document.getElementById('init-error-banner').classList.remove('hidden');
+  document.getElementById('init-error-message').textContent =
+    (err && err.message ? err.message : String(err)) +
+    ' — se hai già aperto una versione precedente di questo file in questo browser, prova a cancellare i dati del sito (IndexedDB) e ricaricare.';
+}
+
+async function initApp() {
+  try {
+    const savedTheme = await getSetting('theme', 'theme-soft');
+    currentTheme = savedTheme;
+    document.body.className = `${savedTheme} font-sans antialiased h-full`;
+
+    const savedOrder = await getSetting('navOrder', DEFAULT_NAV_ORDER);
+    currentNavOrder = (Array.isArray(savedOrder) && savedOrder.length === SECTIONS.length) ? savedOrder : DEFAULT_NAV_ORDER;
+    navShowLabels = await getSetting('navShowLabels', true);
+    coverMaxSize = await getSetting('coverMaxSize', 200);
+
+    renderNav('nav-desktop-slot', { vertical: true });
+    renderNav('nav-mobile-slot', { vertical: false });
+    await renderFiltersPanels();
+    renderThemePicker();
+    renderCoverSizePicker();
+    renderNavOrderList();
+    updateNavLabelsToggleBtn();
+    await renderCatalogo();
+    switchSection('catalogo');
+  } catch (err) {
+    showInitError(err);
+  }
+}
+
+/* =====================================================================================
+   MODALI CRUD MANUALI — Punto 3
+   Nessun filtro/ricerca/ordinamento (arrivano al Punto 4): qui l'obiettivo è poter
+   inserire a mano Opere/Edizioni/Istanze reali e verificare che il modello regga.
+   ===================================================================================== */
+
+function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+function parseTagInput(str) {
+  return (str || '').split(',').map(s => s.trim()).filter(Boolean);
+}
+
+async function refreshTagDatalists() {
+  const [subgenres, microgenres, modifiers] = await Promise.all([
+    getAllTags('subgenres'), getAllTags('microgenres'), getAllTags('modifiers'),
+  ]);
+  const fill = (id, values) => {
+    document.getElementById(id).innerHTML = values.map(v => `<option value="${v}">`).join('');
+  };
+  fill('datalist-subgenres', subgenres);
+  fill('datalist-microgenres', microgenres);
+  fill('datalist-modifiers', modifiers);
+}
+
+// --- OPERA -------------------------------------------------------------------------------
+
+function openOperaModal(operaId = null) {
+  document.getElementById('opera-id').value = operaId || '';
+  document.getElementById('opera-delete-btn').classList.toggle('hidden', !operaId);
+  refreshTagDatalists();
+
+  if (operaId) {
+    document.getElementById('modal-opera-title').textContent = 'Modifica Opera';
+    dbGet(operaId).then(opera => {
+      document.getElementById('opera-title').value = opera.title || '';
+      document.getElementById('opera-author').value = opera.author || '';
+      document.getElementById('opera-description').value = opera.description || '';
+      document.getElementById('opera-series').value = opera.series || '';
+      document.getElementById('opera-series-index').value = opera.seriesIndex ?? '';
+      document.getElementById('opera-macro').value = opera.macro || 'Narrativa';
+      document.getElementById('opera-subgenres').value = (opera.subgenres || []).join(', ');
+      document.getElementById('opera-microgenres').value = (opera.microgenres || []).join(', ');
+      document.getElementById('opera-modifiers').value = (opera.modifiers || []).join(', ');
+    });
+  } else {
+    document.getElementById('modal-opera-title').textContent = 'Nuova Opera';
+    ['opera-title','opera-author','opera-description','opera-series','opera-series-index',
+     'opera-subgenres','opera-microgenres','opera-modifiers'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('opera-macro').value = 'Narrativa';
+  }
+  openModal('modal-opera');
+}
+
+async function saveOperaFromForm() {
+  const operaId = document.getElementById('opera-id').value;
+  const title = document.getElementById('opera-title').value.trim();
+  const author = document.getElementById('opera-author').value.trim();
+  if (!title || !author) { alert('Titolo e Autore sono obbligatori.'); return; }
+
+  const data = {
+    title, author,
+    description: document.getElementById('opera-description').value.trim(),
+    series: document.getElementById('opera-series').value.trim() || null,
+    seriesIndex: document.getElementById('opera-series-index').value ? Number(document.getElementById('opera-series-index').value) : null,
+    macro: document.getElementById('opera-macro').value,
+    subgenres: parseTagInput(document.getElementById('opera-subgenres').value),
+    microgenres: parseTagInput(document.getElementById('opera-microgenres').value),
+    modifiers: parseTagInput(document.getElementById('opera-modifiers').value),
+  };
+
+  if (operaId) { await updateOpera(operaId, data); } else { await createOpera(data); }
+  closeModal('modal-opera');
+  await renderCatalogo();
+}
+
+async function deleteOperaFromModal() {
+  const operaId = document.getElementById('opera-id').value;
+  if (!operaId) return;
+  if (!confirm('Eliminare questa Opera e tutte le sue Edizioni/Istanze?')) return;
+  await deleteOpera(operaId);
+  closeModal('modal-opera');
+  await renderCatalogo();
+}
+
+// --- EDIZIONE ----------------------------------------------------------------------------
+
+async function openEditionModal(operaId, editionId = null) {
+  document.getElementById('edition-opera-id').value = operaId;
+  document.getElementById('edition-id').value = editionId || '';
+  document.getElementById('edition-delete-btn').classList.toggle('hidden', !editionId);
+
+  const opera = await dbGet(operaId);
+  document.getElementById('modal-edition').dataset.operaDescription = opera?.description || '';
+  document.getElementById('modal-edition').dataset.operaTitle = opera?.title || '';
+
+  if (editionId) {
+    document.getElementById('modal-edition-title').textContent = 'Modifica Edizione';
+    const edition = opera.editions.find(e => e.id === editionId);
+    document.getElementById('edition-publisher').value = edition.publisher || '';
+    document.getElementById('edition-year').value = edition.year ?? '';
+    document.getElementById('edition-language').value = edition.language || 'Italiano';
+    document.getElementById('edition-alternate-title').value = edition.alternateTitle || '';
+    document.getElementById('edition-description').value = edition.description || '';
+  } else {
+    document.getElementById('modal-edition-title').textContent = 'Nuova Edizione';
+    document.getElementById('edition-publisher').value = '';
+    document.getElementById('edition-year').value = '';
+    document.getElementById('edition-language').value = 'Italiano';
+    document.getElementById('edition-alternate-title').value = '';
+    document.getElementById('edition-description').value = '';
+  }
+  openModal('modal-edition');
+}
+
+function copyOperaDescriptionToEdition() {
+  const desc = document.getElementById('modal-edition').dataset.operaDescription || '';
+  document.getElementById('edition-description').value = desc;
+}
+function copyOperaTitleToEdition() {
+  const title = document.getElementById('modal-edition').dataset.operaTitle || '';
+  document.getElementById('edition-alternate-title').value = title;
+}
+
+async function saveEditionFromForm() {
+  const operaId = document.getElementById('edition-opera-id').value;
+  const editionId = document.getElementById('edition-id').value;
+  const data = {
+    publisher: document.getElementById('edition-publisher').value.trim(),
+    year: document.getElementById('edition-year').value ? Number(document.getElementById('edition-year').value) : null,
+    language: document.getElementById('edition-language').value.trim() || 'Italiano',
+    alternateTitle: document.getElementById('edition-alternate-title').value.trim(),
+    description: document.getElementById('edition-description').value.trim(),
+  };
+  if (editionId) { await updateEdition(operaId, editionId, data); } else { await addEdition(operaId, data); }
+  closeModal('modal-edition');
+  await renderCatalogo();
+}
+
+async function deleteEditionFromModal() {
+  const operaId = document.getElementById('edition-opera-id').value;
+  const editionId = document.getElementById('edition-id').value;
+  if (!editionId) return;
+  if (!confirm('Eliminare questa Edizione e tutte le sue Istanze?')) return;
+  await deleteEdition(operaId, editionId);
+  closeModal('modal-edition');
+  await renderCatalogo();
+}
+
+// --- ISTANZA -----------------------------------------------------------------------------
+
+function onInstanceFormatChange() {
+  const isAudio = document.getElementById('instance-format').value === 'Audiobook';
+  document.getElementById('instance-pages-wrap').classList.toggle('hidden', isAudio);
+  document.getElementById('instance-minutes-wrap').classList.toggle('hidden', !isAudio);
+}
+
+function renderStarPicker(current) {
+  const el = document.getElementById('rating-stars');
+  el.innerHTML = '';
+  for (let i = 1; i <= 5; i++) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.setAttribute('data-star', i);
+    btn.className = 'text-xl leading-none';
+    btn.textContent = i <= current ? '★' : '☆';
+    btn.onclick = () => setRatingValue(i);
+    el.appendChild(btn);
+  }
+}
+function setRatingValue(i) {
+  const current = parseInt(document.getElementById('instance-rating-value').value || '0', 10);
+  const newVal = (current === i) ? 0 : i;
+  document.getElementById('instance-rating-value').value = newVal;
+  renderStarPicker(newVal);
+}
+
+async function openInstanceModal(operaId, editionId, instanceId = null) {
+  document.getElementById('instance-opera-id').value = operaId;
+  document.getElementById('instance-edition-id').value = editionId;
+  document.getElementById('instance-id').value = instanceId || '';
+  document.getElementById('instance-delete-btn').classList.toggle('hidden', !instanceId);
+  document.getElementById('instance-sessions-wrap').classList.toggle('hidden', !instanceId);
+
+  const opera = await dbGet(operaId);
+  const edition = opera.editions.find(e => e.id === editionId);
+  document.getElementById('modal-instance').dataset.operaDescription = opera?.description || '';
+  document.getElementById('modal-instance').dataset.editionDescription = edition?.description || '';
+
+  if (instanceId) {
+    document.getElementById('modal-instance-title').textContent = 'Modifica Istanza';
+    const instance = edition.instances.find(i => i.id === instanceId);
+
+    document.getElementById('instance-format').value = instance.format;
+    document.getElementById('instance-ownership').value = instance.ownership;
+    document.getElementById('instance-isbn').value = instance.isbn || '';
+    document.getElementById('instance-location').value = instance.location || '';
+    document.getElementById('instance-total-pages').value = instance.totalPages ?? '';
+    document.getElementById('instance-total-minutes').value = instance.totalMinutes ?? '';
+    document.getElementById('instance-description').value = instance.description || '';
+    setCoverPreview(instance.coverBase64 || '');
+    renderStarPicker(instance.rating || 0);
+    await renderInstanceSessions();
+  } else {
+    document.getElementById('modal-instance-title').textContent = 'Nuova Istanza';
+    document.getElementById('instance-format').value = 'E-book';
+    document.getElementById('instance-ownership').value = 'owned';
+    document.getElementById('instance-isbn').value = '';
+    document.getElementById('instance-location').value = '';
+    document.getElementById('instance-total-pages').value = '';
+    document.getElementById('instance-total-minutes').value = '';
+    document.getElementById('instance-description').value = '';
+    setCoverPreview('');
+    renderStarPicker(0);
+  }
+  document.getElementById('instance-cover-url').value = '';
+  onInstanceFormatChange();
+  openModal('modal-instance');
+}
+
+function copyOperaDescriptionToInstance() {
+  const desc = document.getElementById('modal-instance').dataset.operaDescription || '';
+  document.getElementById('instance-description').value = desc;
+}
+function copyEditionDescriptionToInstance() {
+  const desc = document.getElementById('modal-instance').dataset.editionDescription || '';
+  document.getElementById('instance-description').value = desc;
+}
+
+// --- COPERTINA (Punto 5): upload da file o da URL, ridimensionata client-side ------------
+
+function setCoverPreview(base64) {
+  document.getElementById('instance-cover-base64').value = base64 || '';
+  const img = document.getElementById('instance-cover-preview');
+  if (base64) { img.src = base64; img.classList.remove('hidden'); }
+  else { img.src = ''; img.classList.add('hidden'); }
+}
+function removeCoverImage() { setCoverPreview(''); }
+
+// Ridimensiona un'immagine (da Blob/File) via canvas: max 200px sul lato maggiore, JPEG qualità 0.75.
+function resizeAndCompressImageFromBlob(blob, maxSize = 200, quality = 0.75) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const ratio = Math.min(1, maxSize / Math.max(img.width, img.height));
+      const w = Math.max(1, Math.round(img.width * ratio));
+      const h = Math.max(1, Math.round(img.height * ratio));
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("Impossibile leggere l'immagine")); };
+    img.src = objectUrl;
+  });
+}
+
+async function onCoverFileSelected(file) {
+  if (!file) return;
+  try {
+    const base64 = await resizeAndCompressImageFromBlob(file, coverMaxSize);
+    setCoverPreview(base64);
+  } catch (err) {
+    alert("Impossibile elaborare l'immagine: " + err.message);
+  }
+}
+
+// Scarica una copertina remota e la comprime. Molti host di copertine non abilitano CORS per il
+// fetch cross-origin: in quel caso l'errore viene mostrato e la copertina semplicemente non viene
+// impostata, senza bloccare il resto della modale.
+async function downloadAndCompressImage(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Download fallito (HTTP ' + res.status + ')');
+  const blob = await res.blob();
+  return resizeAndCompressImageFromBlob(blob, coverMaxSize);
+}
+
+async function onCoverUrlDownload() {
+  const url = document.getElementById('instance-cover-url').value.trim();
+  if (!url) return;
+  try {
+    const base64 = await downloadAndCompressImage(url);
+    setCoverPreview(base64);
+  } catch (err) {
+    alert('Impossibile scaricare la copertina da questo URL (spesso per restrizioni CORS del sito sorgente): ' + err.message);
+  }
+}
+
+async function saveInstanceFromForm() {
+  const operaId = document.getElementById('instance-opera-id').value;
+  const editionId = document.getElementById('instance-edition-id').value;
+  const instanceId = document.getElementById('instance-id').value;
+  const format = document.getElementById('instance-format').value;
+
+  const data = {
+    format,
+    ownership: document.getElementById('instance-ownership').value,
+    isbn: document.getElementById('instance-isbn').value.trim(),
+    location: document.getElementById('instance-location').value.trim(),
+    description: document.getElementById('instance-description').value.trim(),
+    rating: parseInt(document.getElementById('instance-rating-value').value || '0', 10),
+    coverBase64: document.getElementById('instance-cover-base64').value || '',
+    totalPages: format !== 'Audiobook' && document.getElementById('instance-total-pages').value ? Number(document.getElementById('instance-total-pages').value) : null,
+    totalMinutes: format === 'Audiobook' && document.getElementById('instance-total-minutes').value ? Number(document.getElementById('instance-total-minutes').value) : null,
+  };
+  // "sessions" non è mai incluso qui: le Sessioni si gestiscono con le loro funzioni dedicate,
+  // così il Salva dei campi base non tocca mai lo storico di lettura già registrato.
+
+  if (instanceId) { await updateInstance(operaId, editionId, instanceId, data); }
+  else { await addInstance(operaId, editionId, data); }
+  closeModal('modal-instance');
+  await renderCatalogo();
+}
+
+async function deleteInstanceFromModal() {
+  const operaId = document.getElementById('instance-opera-id').value;
+  const editionId = document.getElementById('instance-edition-id').value;
+  const instanceId = document.getElementById('instance-id').value;
+  if (!instanceId) return;
+  if (!confirm('Eliminare questa Istanza?')) return;
+  await deleteInstance(operaId, editionId, instanceId);
+  closeModal('modal-instance');
+  await renderCatalogo();
+}
+
+// --- SESSIONI DI LETTURA (dentro la modale Istanza) --------------------------------------
+
+function renderSessionCard(session, totalUnit, isAudio) {
+  const unitLabel = isAudio ? 'min' : 'pag.';
+  const pct = totalUnit ? Math.round(((session.currentUnit || 0) / totalUnit) * 100) : null;
+  const labelText = totalUnit
+    ? `${session.currentUnit || 0} / ${totalUnit} ${unitLabel} · ${pct}%`
+    : `${session.currentUnit || 0} ${unitLabel}`;
+  const sortedLog = [...session.readingLog].sort((a, b) => a.date.localeCompare(b.date));
+  return `
+    <div class="ui-input border rounded-xl p-3 text-xs">
+      <div class="flex items-center justify-between gap-2 mb-2">
+        <select onchange="onSessionStatusChange('${session.id}', this.value)" class="ui-input border rounded-lg px-2 py-1 text-xs font-semibold">
+          <option value="In Lettura" ${session.status === 'In Lettura' ? 'selected' : ''}>${isAudio ? 'In Ascolto' : 'In Lettura'}</option>
+          <option value="Completato" ${session.status === 'Completato' ? 'selected' : ''}>Completato</option>
+          <option value="Sospeso" ${session.status === 'Sospeso' ? 'selected' : ''}>Sospeso</option>
+          <option value="Abbandonato" ${session.status === 'Abbandonato' ? 'selected' : ''}>Abbandonato</option>
+        </select>
+        <button type="button" onclick="deleteSessionFromModal('${session.id}')" class="text-red-500 text-[11px] font-semibold shrink-0">🗑 Elimina sessione</button>
+      </div>
+      <div class="grid grid-cols-2 gap-2 mb-2">
+        <div>
+          <label class="ui-muted text-[10px]">Inizio</label>
+          <input type="date" value="${session.startDate || ''}" onchange="onSessionDateChange('${session.id}','startDate',this.value)" class="ui-input w-full p-1.5 rounded-lg border text-xs">
+        </div>
+        <div>
+          <label class="ui-muted text-[10px]">Fine</label>
+          <input type="date" value="${session.endDate || ''}" onchange="onSessionDateChange('${session.id}','endDate',this.value)" class="ui-input w-full p-1.5 rounded-lg border text-xs">
+        </div>
+      </div>
+      <div class="mb-2">
+        <div class="flex justify-between text-[10px] ui-muted mb-1">
+          <span id="session-label-${session.id}">${labelText}</span>
+        </div>
+        ${totalUnit
+          ? `<input type="range" id="session-slider-${session.id}" min="0" max="100" value="${pct}"
+              oninput="onSessionSliderInput('${session.id}', this.value, ${totalUnit}, '${unitLabel}')"
+              onchange="onSessionPercentChange('${session.id}', this.value)" class="w-full">`
+          : `<p class="ui-muted text-[10px]">Imposta ${isAudio ? 'i minuti totali' : 'le pagine totali'} qui sopra per usare lo slider percentuale.</p>`}
+      </div>
+      <div class="flex gap-2 mb-2">
+        <input type="number" min="0" ${totalUnit ? `max="${totalUnit}"` : ''} value="${session.currentUnit || 0}"
+          id="session-absolute-${session.id}" placeholder="Sei arrivato a ${isAudio ? 'minuto' : 'pagina'}..."
+          oninput="onSessionAbsoluteInput('${session.id}', this.value, ${totalUnit || 0}, '${unitLabel}')"
+          class="ui-input flex-1 p-1.5 rounded-lg border text-xs">
+        <button type="button" onclick="setAbsoluteFromModal('${session.id}')" class="ui-accent-bg text-white px-2 py-1 rounded-lg text-[11px] font-semibold shrink-0">Aggiorna</button>
+      </div>
+      ${sortedLog.length ? `
+      <div class="mt-1 max-h-24 overflow-y-auto flex flex-col gap-1">
+        ${sortedLog.map(l => `
+          <div class="flex items-center justify-between gap-1 ui-muted text-[10px]">
+            <input type="date" value="${l.date}" onchange="onLogDateChange('${session.id}','${l.date}',this.value)" class="ui-input p-1 rounded border text-[10px]">
+            <span>${l.unitsRead >= 0 ? '+' : ''}${l.unitsRead} → ${l.reachedUnit}</span>
+          </div>`).join('')}
+      </div>` : ''}
+    </div>`;
+}
+
+async function renderInstanceSessions() {
+  const operaId = document.getElementById('instance-opera-id').value;
+  const editionId = document.getElementById('instance-edition-id').value;
+  const instanceId = document.getElementById('instance-id').value;
+  const container = document.getElementById('instance-sessions-container');
+  if (!instanceId) { container.innerHTML = ''; return; }
+
+  const opera = await dbGet(operaId);
+  const instance = findInstance(opera, editionId, instanceId);
+  const isAudio = instance.format === 'Audiobook';
+  const totalUnit = getInstanceTotalUnit(instance);
+  const sessions = [...instance.sessions].sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));
+
+  container.innerHTML = sessions.length
+    ? sessions.map(s => renderSessionCard(s, totalUnit, isAudio)).join('')
+    : '<p class="ui-muted text-xs">Nessuna sessione ancora. Usa "+ Nuova sessione" per iniziare una lettura/ascolto.</p>';
+  document.getElementById('instance-status-display').textContent = getDisplayStatusLabel(getInstanceDisplayStatus(instance), instance.format === 'Audiobook');
+}
+
+async function addSessionFromModal() {
+  const operaId = document.getElementById('instance-opera-id').value;
+  const editionId = document.getElementById('instance-edition-id').value;
+  const instanceId = document.getElementById('instance-id').value;
+  if (!instanceId) { alert('Salva prima l\'Istanza: poi potrai aggiungere sessioni di lettura.'); return; }
+  await addSession(operaId, editionId, instanceId);
+  await renderInstanceSessions();
+  await renderCatalogo();
+}
+
+async function deleteSessionFromModal(sessionId) {
+  if (!confirm('Eliminare questa sessione di lettura e tutte le sue registrazioni di progresso?')) return;
+  const operaId = document.getElementById('instance-opera-id').value;
+  const editionId = document.getElementById('instance-edition-id').value;
+  const instanceId = document.getElementById('instance-id').value;
+  await deleteSession(operaId, editionId, instanceId, sessionId);
+  await renderInstanceSessions();
+  await renderCatalogo();
+}
+
+async function onSessionStatusChange(sessionId, status) {
+  const operaId = document.getElementById('instance-opera-id').value;
+  const editionId = document.getElementById('instance-edition-id').value;
+  const instanceId = document.getElementById('instance-id').value;
+  await updateSessionStatus(operaId, editionId, instanceId, sessionId, status);
+  await renderCatalogo();
+}
+
+async function onSessionDateChange(sessionId, field, value) {
+  const operaId = document.getElementById('instance-opera-id').value;
+  const editionId = document.getElementById('instance-edition-id').value;
+  const instanceId = document.getElementById('instance-id').value;
+  await updateSessionDates(operaId, editionId, instanceId, sessionId, { [field]: value });
+  await renderCatalogo();
+}
+
+async function onSessionPercentChange(sessionId, percent) {
+  const operaId = document.getElementById('instance-opera-id').value;
+  const editionId = document.getElementById('instance-edition-id').value;
+  const instanceId = document.getElementById('instance-id').value;
+  const opera = await dbGet(operaId);
+  const instance = findInstance(opera, editionId, instanceId);
+  const totalUnit = getInstanceTotalUnit(instance);
+  const reachedUnit = Math.round((percent / 100) * totalUnit);
+  await setSessionProgressAbsolute(operaId, editionId, instanceId, sessionId, reachedUnit);
+  await renderInstanceSessions();
+  await renderCatalogo();
+}
+
+// Feedback in tempo reale mentre si trascina lo slider o si digita il numero, senza scrivere
+// ancora su IndexedDB: il salvataggio avviene solo al rilascio dello slider (onSessionPercentChange)
+// o al click su "Aggiorna" (setAbsoluteFromModal).
+function onSessionSliderInput(sessionId, percent, totalUnit, unitLabel) {
+  const reached = Math.round((percent / 100) * totalUnit);
+  const label = document.getElementById('session-label-' + sessionId);
+  if (label) label.textContent = `${reached} / ${totalUnit} ${unitLabel} · ${percent}%`;
+  const absInput = document.getElementById('session-absolute-' + sessionId);
+  if (absInput) absInput.value = reached;
+}
+function onSessionAbsoluteInput(sessionId, value, totalUnit, unitLabel) {
+  const reached = Number(value) || 0;
+  const label = document.getElementById('session-label-' + sessionId);
+  if (totalUnit) {
+    const pct = Math.max(0, Math.min(100, Math.round((reached / totalUnit) * 100)));
+    if (label) label.textContent = `${reached} / ${totalUnit} ${unitLabel} · ${pct}%`;
+    const slider = document.getElementById('session-slider-' + sessionId);
+    if (slider) slider.value = pct;
+  } else if (label) {
+    label.textContent = `${reached} ${unitLabel}`;
+  }
+}
+
+async function setAbsoluteFromModal(sessionId) {
+  const input = document.getElementById('session-absolute-' + sessionId);
+  const value = Number(input.value);
+  if (isNaN(value) || value < 0) return;
+  const operaId = document.getElementById('instance-opera-id').value;
+  const editionId = document.getElementById('instance-edition-id').value;
+  const instanceId = document.getElementById('instance-id').value;
+  await setSessionProgressAbsolute(operaId, editionId, instanceId, sessionId, value);
+  await renderInstanceSessions();
+  await renderCatalogo();
+}
+
+async function onLogDateChange(sessionId, oldDate, newDate) {
+  const operaId = document.getElementById('instance-opera-id').value;
+  const editionId = document.getElementById('instance-edition-id').value;
+  const instanceId = document.getElementById('instance-id').value;
+  await updateLogEntryDate(operaId, editionId, instanceId, sessionId, oldDate, newDate);
+  await renderInstanceSessions();
+}
+
+// --- RENDER CATALOGO (nessun filtro/ricerca: arrivano al Punto 4) ------------------------
+
+function statusBadgeClass(status) {
+  return {
+    'Da Leggere': 'bg-gray-500/15',
+    'In Lettura': 'bg-blue-500/15',
+    'Completato': 'bg-green-500/15',
+    'Sospeso': 'bg-amber-500/15',
+    'Abbandonato': 'bg-red-500/15',
+  }[status] || 'bg-gray-500/15';
+}
+
+// Etichetta SOLO visiva: il valore memorizzato resta sempre 'Da Leggere'/'In Lettura' (anche per
+// gli audiolibri); qui si traduce solo per la UI in "Da Ascoltare"/"In Ascolto".
+function getDisplayStatusLabel(status, isAudio) {
+  if (!isAudio) return status;
+  if (status === 'Da Leggere') return 'Da Ascoltare';
+  if (status === 'In Lettura') return 'In Ascolto';
+  return status;
+}
+
+// Dettaglio tra parentesi dopo lo stato, es. " (pag. 23/212 - 9%)" — vuoto se non c'è ancora
+// nessuna sessione, se le pagine/minuti totali non sono impostati, o se lo stato è "Completato"
+// (a libro finito il dettaglio di pagina/percentuale non aggiunge informazione utile).
+function instanceProgressDetail(instance) {
+  const session = getInstanceRepresentativeSession(instance);
+  if (!session || session.status === 'Completato') return '';
+  const isAudio = instance.format === 'Audiobook';
+  const unitLabel = isAudio ? 'min.' : 'pag.';
+  const totalUnit = getInstanceTotalUnit(instance);
+  const reached = session.currentUnit || 0;
+  if (totalUnit) {
+    const pct = Math.round((reached / totalUnit) * 100);
+    return ` (${unitLabel} ${reached}/${totalUnit} - ${pct}%)`;
+  }
+  return reached ? ` (${unitLabel} ${reached})` : '';
+}
+
+// --- FILTRI / ORDINAMENTO applicati al Catalogo ------------------------------------------
+
+function operaMatchesFilters(opera) {
+  const f = catalogFilters;
+  const q = f.search.trim().toLowerCase();
+  if (q) {
+    const haystack = [
+      opera.title, opera.author, opera.description, opera.series || '',
+      ...opera.subgenres, ...opera.microgenres, ...opera.modifiers,
+      ...opera.editions.map(e => e.alternateTitle || ''),
+    ].join(' ').toLowerCase();
+    if (!haystack.includes(q)) return false;
+  }
+  if (f.macro.length && !f.macro.includes(opera.macro)) return false;
+  if (f.subgenres.length && !matchesTagFilter(f.subgenres, opera.subgenres)) return false;
+  if (f.microgenres.length && !matchesTagFilter(f.microgenres, opera.microgenres)) return false;
+  if (f.modifiers.length && !matchesTagFilter(f.modifiers, opera.modifiers)) return false;
+  return true;
+}
+// Un'Opera soddisfa il filtro se ha almeno uno dei tag selezionati, oppure se è stato
+// selezionato "— Nessuno —" ed è priva di tag a quel livello.
+function matchesTagFilter(selectedValues, operaTags) {
+  return selectedValues.some(v => v === EMPTY_TAG ? operaTags.length === 0 : operaTags.includes(v));
+}
+function instanceMatchesFilters(instance) {
+  const f = catalogFilters;
+  if (f.status.length && !f.status.includes(getInstanceDisplayStatus(instance))) return false;
+  if (f.ownership.length && !f.ownership.includes(instance.ownership)) return false;
+  if (f.format.length && !f.format.includes(instance.format)) return false;
+  return true;
+}
+function operaHasMatchingInstance(opera) {
+  if (!catalogFilters.status.length && !catalogFilters.ownership.length && !catalogFilters.format.length) return true;
+  return opera.editions.some(e => e.instances.some(i => instanceMatchesFilters(i)));
+}
+function operaMaxRating(opera) {
+  let max = 0;
+  opera.editions.forEach(e => e.instances.forEach(i => { if ((i.rating || 0) > max) max = i.rating; }));
+  return max;
+}
+function sortOpere(list) {
+  const arr = [...list];
+  if (catalogSort === 'author-asc') arr.sort((a, b) => (a.author || '').localeCompare(b.author || '', 'it'));
+  else if (catalogSort === 'series-asc') arr.sort((a, b) => {
+    const c = (a.series || '').localeCompare(b.series || '', 'it');
+    return c !== 0 ? c : (a.seriesIndex || 0) - (b.seriesIndex || 0);
+  });
+  else if (catalogSort === 'rating-desc') arr.sort((a, b) => operaMaxRating(b) - operaMaxRating(a));
+  else arr.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'it'));
+  return arr;
+}
+
+async function renderCatalogo() {
+  const container = document.getElementById('catalogo-list');
+  const countEl = document.getElementById('catalogo-count');
+  const paginationEl = document.getElementById('catalogo-pagination');
+
+  const all = await dbGetAll();
+  const filtered = sortOpere(all.filter(o => operaMatchesFilters(o) && operaHasMatchingInstance(o)));
+  const totalCount = all.length;
+  const matchCount = filtered.length;
+  const f = catalogFilters;
+  const hasActiveFilters = f.search || f.macro.length || f.subgenres.length || f.microgenres.length || f.modifiers.length || f.status.length || f.ownership.length || f.format.length;
+
+  countEl.textContent = hasActiveFilters ? `${matchCount} opera/e trovate su ${totalCount} totali` : `${totalCount} opera/e in catalogo`;
+
+  if (totalCount === 0) {
+    container.innerHTML = `
+      <div class="ui-card border rounded-2xl p-8 text-center">
+        <p class="text-3xl mb-2">📚</p>
+        <p class="font-semibold mb-1">Il catalogo è ancora vuoto</p>
+        <p class="ui-muted text-sm">Usa "+ Nuova Opera" qui sopra per aggiungere il primo libro.</p>
+      </div>`;
+    paginationEl.innerHTML = '';
+    return;
+  }
+  if (matchCount === 0) {
+    container.innerHTML = `
+      <div class="ui-card border rounded-2xl p-8 text-center">
+        <p class="text-3xl mb-2">🔍</p>
+        <p class="font-semibold mb-1">Nessuna Opera corrisponde ai filtri</p>
+        <p class="ui-muted text-sm">Prova ad azzerare i filtri dal pannello "☰ Filtri".</p>
+      </div>`;
+    paginationEl.innerHTML = '';
+    return;
+  }
+
+  const pageSize = catalogPageSize === 'all' ? matchCount : catalogPageSize;
+  const totalPages = Math.max(1, Math.ceil(matchCount / pageSize));
+  catalogPage = Math.min(Math.max(1, catalogPage), totalPages);
+  const startIdx = (catalogPage - 1) * pageSize;
+  const pageItems = catalogPageSize === 'all' ? filtered : filtered.slice(startIdx, startIdx + pageSize);
+  const instanceFilterActive = catalogFilters.status.length > 0 || catalogFilters.ownership.length > 0 || catalogFilters.format.length > 0;
+
+  container.innerHTML = pageItems.map(opera => `
+    <div class="ui-card border rounded-2xl p-4">
+      <div class="flex items-start justify-between gap-2">
+        <div>
+          <p class="font-bold">${opera.title}</p>
+          <p class="ui-muted text-xs">${opera.author}${opera.series ? ' · ' + opera.series + (opera.seriesIndex ? ' #' + opera.seriesIndex : '') : ''}</p>
+          <p class="text-[10px] font-semibold ui-accent-text uppercase tracking-wide mt-1">${opera.macro}</p>
+          ${(opera.subgenres.length || opera.microgenres.length || opera.modifiers.length) ? `
+            <div class="flex flex-wrap gap-1 mt-1.5">
+              ${[...opera.subgenres, ...opera.microgenres, ...opera.modifiers].map(t => `<span class="text-[9px] px-1.5 py-0.5 rounded bg-gray-500/10">${t}</span>`).join('')}
+            </div>` : ''}
+        </div>
+        <div class="flex gap-1 shrink-0">
+          <button onclick="openOperaModal('${opera.id}')" class="ui-btn-sec w-8 h-8 rounded-lg text-sm">✎</button>
+          <button onclick="openEditionModal('${opera.id}')" class="ui-btn-sec px-2 h-8 rounded-lg text-xs font-semibold">+ Edizione</button>
+        </div>
+      </div>
+
+      <div class="mt-3 pl-3 border-l-2 border-gray-500/20 flex flex-col gap-2">
+        ${opera.editions.map(edition => {
+          const shownInstances = instanceFilterActive ? edition.instances.filter(i => instanceMatchesFilters(i)) : edition.instances;
+          if (instanceFilterActive && edition.instances.length > 0 && shownInstances.length === 0) return '';
+          return `
+          <div>
+            <div class="flex items-center justify-between gap-2">
+              <div>
+                ${edition.alternateTitle ? `<p class="text-xs font-bold ui-accent-text">"${edition.alternateTitle}"</p>` : ''}
+                <p class="text-xs font-semibold">${edition.publisher || 'Editore sconosciuto'}${edition.year ? ' (' + edition.year + ')' : ''} <span class="ui-muted font-normal">${edition.language || ''}</span></p>
+              </div>
+              <div class="flex gap-1 shrink-0">
+                <button onclick="openEditionModal('${opera.id}','${edition.id}')" class="ui-btn-sec w-7 h-7 rounded-lg text-xs">✎</button>
+                <button onclick="openInstanceModal('${opera.id}','${edition.id}')" class="ui-btn-sec px-2 h-7 rounded-lg text-xs font-semibold">+ Istanza</button>
+              </div>
+            </div>
+            <div class="pl-3 border-l-2 border-gray-500/10 mt-1.5 flex flex-col gap-1.5">
+              ${shownInstances.map(inst => `
+                <div class="flex items-center justify-between gap-2 text-xs ${statusBadgeClass(getInstanceDisplayStatus(inst))} rounded-lg px-2 py-1.5">
+                  <span class="flex items-center gap-2 min-w-0">
+                    ${inst.coverBase64 ? `<img src="${inst.coverBase64}" onclick="openCoverViewer(this.src)" class="w-5 h-7 object-cover rounded shrink-0 cursor-zoom-in">` : ''}
+                    <span class="truncate">
+                      ${inst.format === 'Cartaceo' ? '📕' : inst.format === 'Audiobook' ? '🎧' : '📱'} ${inst.format}
+                      · ${getDisplayStatusLabel(getInstanceDisplayStatus(inst), inst.format === 'Audiobook')}${instanceProgressDetail(inst)}${inst.rating ? ' · ' + '★'.repeat(inst.rating) : ''}
+                    </span>
+                  </span>
+                  <button onclick="openInstanceModal('${opera.id}','${edition.id}','${inst.id}')" class="ui-btn-sec w-6 h-6 rounded-md shrink-0">✎</button>
+                </div>`).join('') || '<p class="ui-muted text-[11px]">Nessuna istanza in questa edizione.</p>'}
+            </div>
+          </div>`;
+        }).join('') || '<p class="ui-muted text-xs">Nessuna edizione ancora in questa Opera.</p>'}
+      </div>
+    </div>`).join('');
+
+  renderPaginationControls(totalPages);
+}
+
+function renderPaginationControls(totalPages) {
+  const el = document.getElementById('catalogo-pagination');
+  if (!el) return;
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+  const maxButtons = 7;
+  let startP = Math.max(1, catalogPage - 3);
+  let endP = Math.min(totalPages, startP + maxButtons - 1);
+  startP = Math.max(1, endP - maxButtons + 1);
+  let html = `<button onclick="goToPage(${Math.max(1, catalogPage - 1)})" ${catalogPage === 1 ? 'disabled' : ''} class="ui-btn-sec w-8 h-8 rounded-lg text-xs font-bold ${catalogPage === 1 ? 'opacity-30' : ''}">‹</button>`;
+  for (let p = startP; p <= endP; p++) {
+    html += `<button onclick="goToPage(${p})" class="w-8 h-8 rounded-lg text-xs font-bold ${p === catalogPage ? 'ui-accent-bg text-white' : 'ui-btn-sec'}">${p}</button>`;
+  }
+  html += `<button onclick="goToPage(${Math.min(totalPages, catalogPage + 1)})" ${catalogPage === totalPages ? 'disabled' : ''} class="ui-btn-sec w-8 h-8 rounded-lg text-xs font-bold ${catalogPage === totalPages ? 'opacity-30' : ''}">›</button>`;
+  el.innerHTML = html;
+}
+
+// --- MODULO TASSONOMIA --------------------------------------------------------------------
+
+function taxonomyRow(level, tag, count) {
+  return `
+    <div class="flex items-center justify-between gap-2 text-xs ui-input border rounded-lg px-2 py-1.5">
+      <label class="flex items-center gap-2 cursor-pointer overflow-hidden">
+        <input type="checkbox" data-merge="${level}" value="${tag}">
+        <span class="truncate">${tag}</span> <span class="ui-muted shrink-0">(${count})</span>
+      </label>
+      <div class="flex gap-1 shrink-0">
+        <button type="button" onclick="renameTagPrompt('${level}','${tag}')" class="ui-btn-sec w-6 h-6 rounded-md text-[10px]">✎</button>
+        <button type="button" onclick="deleteTagPrompt('${level}','${tag}',${count})" class="text-red-500 text-[10px] font-semibold px-1">🗑</button>
+      </div>
+    </div>`;
+}
+
+async function renderTaxonomyLevel(level, containerId) {
+  const rows = await getTagUsageCounts(level);
+  const el = document.getElementById(containerId);
+  el.innerHTML = rows.length
+    ? rows.map(r => taxonomyRow(level, r.tag, r.count)).join('')
+    : '<p class="ui-muted text-xs">Nessun tag ancora presente in questo livello.</p>';
+}
+
+async function renderTassonomia() {
+  await Promise.all([
+    renderTaxonomyLevel('subgenres', 'taxonomy-subgenres'),
+    renderTaxonomyLevel('microgenres', 'taxonomy-microgenres'),
+    renderTaxonomyLevel('modifiers', 'taxonomy-modifiers'),
+  ]);
+}
+
+async function afterTaxonomyChange() {
+  await renderTassonomia();
+  await refreshTagDatalists();
+  await renderFiltersPanels();
+  await renderCatalogo();
+}
+
+async function renameTagPrompt(level, tag) {
+  const newTag = prompt(`Rinomina "${tag}" in:`, tag);
+  if (newTag === null || !newTag.trim() || newTag.trim() === tag) return;
+  await renameTagEverywhere(level, tag, newTag);
+  await afterTaxonomyChange();
+}
+
+async function deleteTagPrompt(level, tag, count) {
+  if (!confirm(`Eliminare "${tag}"? Verrà rimosso da ${count} opera/e.`)) return;
+  await deleteTagEverywhere(level, tag);
+  await afterTaxonomyChange();
+}
+
+async function mergeSelectedTags(level) {
+  const checked = [...document.querySelectorAll(`input[data-merge="${level}"]:checked`)].map(el => el.value);
+  if (checked.length < 2) { alert('Seleziona almeno due tag da unire.'); return; }
+  const canonical = prompt(`Unisci ${checked.join(', ')} in un unico tag chiamato:`, checked[0]);
+  if (canonical === null || !canonical.trim()) return;
+  await mergeTagsEverywhere(level, checked, canonical);
+  await afterTaxonomyChange();
+}
+
+/* =====================================================================================
+   RICERCA API A CASCATA (Punto 5)
+   Google Books (IT) -> Open Library -> Internet Archive. Si passa al provider successivo
+   solo se il precedente fallisce (errore di rete, HTTP non-ok, quota) o non trova risultati.
+   Ogni provider normalizza i propri risultati in una forma comune:
+   { source, title, author, publisher, year, language, isbn, description, coverUrl }
+   ===================================================================================== */
+
+async function fetchGoogleBooks(query) {
+  const digitsOnly = query.replace(/[^0-9Xx]/g, '');
+  const looksLikeIsbn = digitsOnly.length >= 9 && digitsOnly.length <= 13 && digitsOnly.length === query.replace(/[\s-]/g, '').length;
+  const q = looksLikeIsbn ? `isbn:${digitsOnly}` : query;
+  const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&country=IT&maxResults=10`;
+  const res = await fetch(url);
+  if (res.status === 429) throw new Error('Quota Google Books superata');
+  if (!res.ok) throw new Error('Google Books HTTP ' + res.status);
+  const data = await res.json();
+  return (data.items || []).map(item => {
+    const vi = item.volumeInfo || {};
+    const ids = vi.industryIdentifiers || [];
+    const isbn = (ids.find(i => i.type === 'ISBN_13') || ids.find(i => i.type === 'ISBN_10') || {}).identifier || '';
+    const cover = vi.imageLinks ? (vi.imageLinks.thumbnail || vi.imageLinks.smallThumbnail || '') : '';
+    return {
+      source: 'Google Books',
+      title: vi.title || '',
+      author: (vi.authors || []).join(', '),
+      publisher: vi.publisher || '',
+      year: vi.publishedDate ? parseInt(vi.publishedDate.slice(0, 4), 10) || null : null,
+      language: vi.language || '',
+      isbn,
+      description: vi.description || '',
+      coverUrl: cover.replace(/^http:/, 'https:'),
+    };
+  }).filter(r => r.title);
+}
+
+async function fetchOpenLibrary(query) {
+  const url = `https://openlibrary.org/search.json?q=${encodeURIComponent(query)}&limit=10`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Open Library HTTP ' + res.status);
+  const data = await res.json();
+  return (data.docs || []).map(doc => ({
+    source: 'Open Library',
+    title: doc.title || '',
+    author: (doc.author_name || []).join(', '),
+    publisher: (doc.publisher || [])[0] || '',
+    year: doc.first_publish_year || null,
+    language: (doc.language || [])[0] || '',
+    isbn: (doc.isbn || [])[0] || '',
+    description: '',
+    coverUrl: doc.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-M.jpg` : '',
+  })).filter(r => r.title);
+}
+
+async function fetchInternetArchive(query) {
+  const q = `(${query}) AND mediatype:texts`;
+  const fields = ['identifier', 'title', 'creator', 'year', 'publisher', 'language'].map(f => `fl[]=${f}`).join('&');
+  const url = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}&${fields}&rows=10&page=1&output=json`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('Internet Archive HTTP ' + res.status);
+  const data = await res.json();
+  const docs = (data.response && data.response.docs) || [];
+  const first = v => Array.isArray(v) ? (v[0] || '') : (v || '');
+  return docs.map(doc => ({
+    source: 'Internet Archive',
+    title: first(doc.title),
+    author: Array.isArray(doc.creator) ? doc.creator.join(', ') : (doc.creator || ''),
+    publisher: first(doc.publisher),
+    year: doc.year ? parseInt(first(doc.year), 10) || null : null,
+    language: first(doc.language),
+    isbn: '',
+    description: '',
+    coverUrl: doc.identifier ? `https://archive.org/services/img/${doc.identifier}` : '',
+  })).filter(r => r.title);
+}
+
+async function performApiSearchCascade(query) {
+  const providers = [fetchGoogleBooks, fetchOpenLibrary, fetchInternetArchive];
+  const failures = [];
+  for (const provider of providers) {
+    try {
+      const results = await provider(query);
+      if (results.length) return { results, failures };
+    } catch (err) {
+      failures.push(provider.name + ': ' + err.message);
+    }
+  }
+  return { results: [], failures };
+}
+
+let apiSearchResults = [];
+
+function openApiSearchModal() {
+  document.getElementById('api-search-query').value = '';
+  document.getElementById('api-search-results').innerHTML = '';
+  apiSearchResults = [];
+  openModal('modal-api-search');
+  document.getElementById('api-search-query').focus();
+}
+
+function apiResultCard(r, idx) {
+  return `
+    <div class="flex gap-3 ui-input border rounded-xl p-2.5">
+      ${r.coverUrl ? `<img src="${r.coverUrl}" class="w-12 h-16 object-cover rounded shrink-0" onerror="this.style.display='none'">` : '<div class="w-12 h-16 rounded bg-gray-500/10 shrink-0"></div>'}
+      <div class="flex-1 text-xs min-w-0">
+        <p class="font-semibold truncate">${r.title || '(senza titolo)'}</p>
+        <p class="ui-muted truncate">${r.author || 'Autore sconosciuto'}${r.year ? ' · ' + r.year : ''}${r.publisher ? ' · ' + r.publisher : ''}</p>
+        <p class="ui-muted text-[10px] mt-0.5">Fonte: ${r.source}</p>
+      </div>
+      <button onclick="applyApiResultAndCreate(${idx})" class="ui-accent-bg text-white px-2 py-1 rounded-lg text-[11px] font-semibold self-center shrink-0">Usa</button>
+    </div>`;
+}
+
+async function runApiSearch() {
+  const query = document.getElementById('api-search-query').value.trim();
+  const resultsEl = document.getElementById('api-search-results');
+  if (!query) return;
+  resultsEl.innerHTML = '<p class="ui-muted text-xs">Ricerca in corso...</p>';
+  const { results, failures } = await performApiSearchCascade(query);
+  apiSearchResults = results;
+  if (!results.length) {
+    resultsEl.innerHTML = `<p class="ui-muted text-xs">Nessun risultato trovato su nessuna delle 3 fonti.${failures.length ? ' (' + failures.join(' · ') + ')' : ''}</p>`;
+    return;
+  }
+  resultsEl.innerHTML = results.map((r, idx) => apiResultCard(r, idx)).join('');
+}
+
+async function applyApiResultAndCreate(idx) {
+  const result = apiSearchResults[idx];
+  if (!result) return;
+  closeModal('modal-api-search');
+
+  const opera = await createOpera({ title: result.title, author: result.author, description: result.description || '', macro: 'Narrativa' });
+  const edition = await addEdition(opera.id, { publisher: result.publisher || '', year: result.year || null, language: result.language || 'Italiano' });
+
+  let coverBase64 = '';
+  if (result.coverUrl) {
+    try { coverBase64 = await downloadAndCompressImage(result.coverUrl); }
+    catch (err) { console.warn('Copertina non scaricabile (' + result.source + '):', err.message); }
+  }
+  await addInstance(opera.id, edition.id, { format: 'Cartaceo', isbn: result.isbn || '', coverBase64 });
+
+  await renderCatalogo();
+  await openOperaModal(opera.id);
+  alert(`Opera creata da ${result.source}. Macro-categoria impostata su "Narrativa" di default: correggila e completa la tassonomia (nessuna delle 3 fonti la fornisce).`);
+}
+
+/* =====================================================================================
+   VISUALIZZATORE COPERTINA — zoom con pinch-to-zoom (mobile), pulsanti +/1:1/− (desktop),
+   doppio tap/doppio click per tornare alla dimensione originale.
+   ===================================================================================== */
+
+let coverZoomLevel = 1;
+const COVER_ZOOM_MIN = 0.5;
+const COVER_ZOOM_MAX = 4;
+
+function applyCoverZoom() {
+  const img = document.getElementById('cover-viewer-img');
+  if (img) img.style.transform = `scale(${coverZoomLevel})`;
+}
+function openCoverViewer(src) {
+  document.getElementById('cover-viewer-img').src = src;
+  coverZoomLevel = 1;
+  applyCoverZoom();
+  openModal('cover-viewer');
+}
+function closeCoverViewer() {
+  closeModal('cover-viewer');
+}
+function onViewerBackdropClick(e) {
+  if (e.target.id === 'cover-viewer') closeCoverViewer();
+}
+function zoomCover(delta) {
+  coverZoomLevel = Math.min(COVER_ZOOM_MAX, Math.max(COVER_ZOOM_MIN, coverZoomLevel + delta));
+  applyCoverZoom();
+}
+function resetCoverZoom() {
+  coverZoomLevel = 1;
+  applyCoverZoom();
+}
+
+// --- Pinch-to-zoom e doppio tap su touch (mobile) ---
+let pinchStartDistance = null;
+let pinchStartZoom = 1;
+let lastTapTime = 0;
+
+function getTouchDistance(touches) {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+function onViewerTouchStart(e) {
+  if (e.touches.length === 2) {
+    pinchStartDistance = getTouchDistance(e.touches);
+    pinchStartZoom = coverZoomLevel;
+  } else if (e.touches.length === 1) {
+    const now = Date.now();
+    if (now - lastTapTime < 300) {
+      resetCoverZoom();
+      lastTapTime = 0;
+    } else {
+      lastTapTime = now;
+    }
+  }
+}
+function onViewerTouchMove(e) {
+  if (e.touches.length === 2 && pinchStartDistance) {
+    e.preventDefault();
+    const ratio = getTouchDistance(e.touches) / pinchStartDistance;
+    coverZoomLevel = Math.min(COVER_ZOOM_MAX, Math.max(COVER_ZOOM_MIN, pinchStartZoom * ratio));
+    applyCoverZoom();
+  }
+}
+function onViewerTouchEnd(e) {
+  if (e.touches.length < 2) pinchStartDistance = null;
+}
+
+/* =====================================================================================
+   IMPORT / EXPORT JSON (Punto 6)
+   Esporta/ripristina l'intero database: store "opere" (Opera/Edizione/Istanza/Sessioni
+   annidate) + store "settings" (tema, ordine nav, dimensione copertine...).
+   ===================================================================================== */
+
+async function clearStore(name) {
+  const store = await storeFor(name, 'readwrite');
+  return new Promise((resolve, reject) => {
+    const req = store.clear();
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function buildExportPayload() {
+  const opere = await dbGetAll('opere');
+  const settingsRecords = await dbGetAll('settings');
+  const settings = {};
+  settingsRecords.forEach(s => { settings[s.key] = s.value; });
+  return { app: 'Opera Codex', exportVersion: 1, exportDate: getLocalDateString(), opere, settings };
+}
+
+async function exportDatabaseToFile() {
+  const payload = await buildExportPayload();
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `opera-codex_${getLocalDateString()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function onImportFileSelected(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    let data;
+    try { data = JSON.parse(e.target.result); }
+    catch (err) { alert('File non valido: non è un JSON leggibile (' + err.message + ').'); return; }
+    await importDatabaseFromObject(data);
+  };
+  reader.onerror = () => alert('Impossibile leggere il file selezionato.');
+  reader.readAsText(file);
+}
+
+async function importDatabaseFromObject(data) {
+  if (!data || !Array.isArray(data.opere)) {
+    alert('Il file non sembra un export valido di Opera Codex: manca l\'elenco "opere".');
+    return false;
+  }
+  const currentCount = (await dbGetAll('opere')).length;
+  const ok = confirm(
+    `Importare ${data.opere.length} Opere da questo file?\n\n` +
+    `Questo SOSTITUIRÀ COMPLETAMENTE il database attuale (${currentCount} Opere presenti ora). ` +
+    `L'operazione non è reversibile se non hai già un backup di quello che c'è ora.`
+  );
+  if (!ok) return false;
+
+  await clearStore('opere');
+  await clearStore('settings');
+  for (const opera of data.opere) { await dbSave(opera, 'opere'); }
+  if (data.settings && typeof data.settings === 'object') {
+    for (const [key, value] of Object.entries(data.settings)) { await setSetting(key, value); }
+  }
+
+  await reloadAppStateAfterImport();
+  alert(`Importazione completata: ${data.opere.length} Opere caricate.`);
+  return true;
+}
+
+// Ricarica lo stato applicativo (tema, ordine nav, dimensione copertine, filtri, catalogo,
+// tassonomia) dopo un import che ha sostituito interamente il database.
+async function reloadAppStateAfterImport() {
+  currentTheme = await getSetting('theme', 'theme-soft');
+  document.body.className = `${currentTheme} font-sans antialiased h-full`;
+
+  const savedOrder = await getSetting('navOrder', DEFAULT_NAV_ORDER);
+  currentNavOrder = (Array.isArray(savedOrder) && savedOrder.length === SECTIONS.length) ? savedOrder : DEFAULT_NAV_ORDER;
+  navShowLabels = await getSetting('navShowLabels', true);
+  coverMaxSize = await getSetting('coverMaxSize', 200);
+
+  renderNav('nav-desktop-slot', { vertical: true });
+  renderNav('nav-mobile-slot', { vertical: false });
+  renderThemePicker();
+  renderCoverSizePicker();
+  renderNavOrderList();
+  updateNavLabelsToggleBtn();
+
+  catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [] };
+  catalogPage = 1;
+  await renderFiltersPanels();
+  await renderCatalogo();
+  if (currentSection === 'tassonomia') await renderTassonomia();
+}
+
+window.addEventListener('DOMContentLoaded', initApp);
+</script>
+</body>
+</html>
