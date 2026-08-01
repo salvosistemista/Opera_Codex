@@ -232,6 +232,12 @@
           <div id="omnishelf-migration-preview" class="hidden ui-input border rounded-xl p-3 text-xs mb-3 flex flex-col gap-1"></div>
           <button id="omnishelf-migration-confirm-btn" onclick="confirmOmnishelfMigration()" class="hidden ui-accent-bg text-white py-2 rounded-lg text-xs font-semibold w-full"></button>
         </div>
+
+        <div class="ui-card border-2 border-red-500/40 rounded-2xl p-5 mt-4">
+          <p class="text-xs font-bold uppercase tracking-wider text-red-500 mb-1">⚠️ Zona pericolosa</p>
+          <p class="ui-muted text-xs mb-3">Cancella <strong>tutto</strong> il database — ogni Opera, Edizione, Istanza e Sessione di lettura, oltre a tutte le impostazioni (tema, ordine menu, dimensione copertine, credenziali WebDAV). È come ripartire da un'installazione nuova. Richiede doppia conferma perché <strong>non è reversibile</strong>: se vuoi un modo per tornare indietro, esporta prima un backup (JSON o WebDAV).</p>
+          <button onclick="resetEntireDatabase()" class="w-full py-2 rounded-lg text-xs font-semibold text-white" style="background-color:#dc2626;">🗑️ Cancella tutto il database</button>
+        </div>
       </section>
 
     </main>
@@ -415,6 +421,16 @@
           <label class="text-xs font-semibold ui-muted">Collocazione <span class="opacity-60">(es. Scaffale, Kindle...)</span></label>
           <input id="instance-location" type="text" class="ui-input w-full p-2.5 rounded-xl border mt-1">
         </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs font-semibold ui-muted">Collana Editoriale <span class="opacity-60">(opzionale)</span></label>
+            <input id="instance-collana" type="text" placeholder="es. Urania, Segretissimo..." class="ui-input w-full p-2.5 rounded-xl border mt-1">
+          </div>
+          <div>
+            <label class="text-xs font-semibold ui-muted">Numero Collana</label>
+            <input id="instance-numero-collana" type="number" min="1" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+          </div>
+        </div>
         <div id="instance-pages-wrap">
           <label class="text-xs font-semibold ui-muted">Pagine totali</label>
           <input id="instance-total-pages" type="number" min="0" class="ui-input w-full p-2.5 rounded-xl border mt-1">
@@ -513,7 +529,7 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.10';
+const APP_VERSION = '1.13';
 
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 2; // bump da 1 a 2: aggiunge lo store "settings" anche a chi ha già aperto il Punto 1
@@ -719,9 +735,9 @@ function findInstance(opera, editionId, instanceId) {
   const edition = opera?.editions.find(e => e.id === editionId);
   return edition?.instances.find(i => i.id === instanceId);
 }
-function newInstanceSkeleton({ ownership = 'owned', format = 'E-book', isbn = '', rating = 0, location = '', description = '', coverBase64 = '', totalPages = null, totalMinutes = null }) {
+function newInstanceSkeleton({ ownership = 'owned', format = 'E-book', isbn = '', rating = 0, location = '', description = '', coverBase64 = '', totalPages = null, totalMinutes = null, collanaEditoriale = '', numeroCollana = null }) {
   return { id: uid('inst'), ownership, format, isbn, rating, location, description, coverBase64,
-    totalPages, totalMinutes, createdAt: getLocalDateString(), sessions: [] };
+    totalPages, totalMinutes, collanaEditoriale, numeroCollana, createdAt: getLocalDateString(), sessions: [] };
 }
 async function addInstance(operaId, editionId, data) {
   const opera = await dbGet(operaId);
@@ -895,6 +911,13 @@ const OMNISHELF_TAG_MAP = {
   'Racconti': ['modifiers', 'Racconti'], 'Classici': ['modifiers', 'Classici'], 'Ragazzi': ['modifiers', 'Ragazzi'],
 };
 
+// OmniShelf separa più autori con " & " (es. "Terry Pratchett & Neil Gaiman"), mentre Opera Codex
+// usa la virgola: qui splittiamo la stringa di origine in singoli nomi, così ogni autore diventa
+// una voce distinta di authors[] invece di un'unica stringa con l'"&" dentro.
+function splitOmnishelfAuthors(authorStr) {
+  return String(authorStr || '').split('&').map(s => s.trim()).filter(Boolean);
+}
+
 function normalizeMigrationKey(str) {
   return String(str || '').trim().toLowerCase().replace(/\s+/g, ' ').replace(/['’]/g, "'");
 }
@@ -913,13 +936,45 @@ function deriveMacroFromOmnishelfBook(book) {
   return { macro: 'Narrativa', needsReview: true };
 }
 
+// Collections di OmniShelf che non sono macro-categoria (Narrativa/Saggistica) ma nemmeno da
+// scartare: anni (con o senza prefisso "a."), TBR/saga/raccolta, e i contatori "x1"/"x2"/...
+// diventano Modificatori dell'Opera.
+const OMNISHELF_MODIFIER_COLLECTION_EXACT = ['tbr', 'saga', 'raccolta'];
+const OMNISHELF_MODIFIER_COLLECTION_PATTERNS = [/^a?\.?\d{4}$/i, /^x\d+$/i];
+function isOmnishelfModifierCollection(col) {
+  const c = String(col || '').trim();
+  if (!c) return false;
+  if (OMNISHELF_MODIFIER_COLLECTION_EXACT.includes(c.toLowerCase())) return true;
+  return OMNISHELF_MODIFIER_COLLECTION_PATTERNS.some(re => re.test(c));
+}
+
 function mapOmnishelfTags(book) {
   const result = { subgenres: [], microgenres: [], modifiers: [] };
   (book.genres || []).forEach(g => {
     const mapping = OMNISHELF_TAG_MAP[g];
     if (mapping) { const [level, name] = mapping; if (!result[level].includes(name)) result[level].push(name); }
   });
+  (book.collections || []).forEach(c => {
+    if (isOmnishelfModifierCollection(c) && !result.modifiers.includes(c)) result.modifiers.push(c);
+  });
   return result;
+}
+
+// Conta, per ogni "seriesName" di OmniShelf, quanti volumi distinti comprende (per seriesVol,
+// o per singolo record se seriesVol manca). Serve per decidere se si tratta di una vera Serie
+// narrativa (Opera) o di una Collana Editoriale a numerazione lunga (Istanza) — vedi Sezione 7.5.
+function countOmnishelfSeriesSizes(books) {
+  const volsBySeries = new Map();
+  books.forEach(b => {
+    const name = (b.seriesName || '').trim();
+    if (!name) return;
+    if (!volsBySeries.has(name)) volsBySeries.set(name, new Set());
+    const vol = (b.seriesVol !== undefined && b.seriesVol !== null && String(b.seriesVol).trim() !== '') ? String(b.seriesVol).trim() : `__rec_${b.id}`;
+    volsBySeries.get(name).add(vol);
+  });
+  const sizes = new Map();
+  volsBySeries.forEach((set, name) => sizes.set(name, set.size));
+  return sizes;
 }
 
 // Una Sessione iniziale per Istanza, solo se il libro ha già un minimo di attività di lettura
@@ -989,6 +1044,7 @@ function buildOmnishelfMigrationPlan(omnishelfData) {
 // con migliaia di libri.
 async function commitOmnishelfMigration(omnishelfData, plan) {
   const readingLogs = omnishelfData.reading_logs || [];
+  const seriesSizes = countOmnishelfSeriesSizes(omnishelfData.books);
   let created = 0;
 
   for (const booksInGroup of plan.groups.values()) {
@@ -1005,8 +1061,17 @@ async function commitOmnishelfMigration(omnishelfData, plan) {
     });
     if (needsReview) mergedTags.modifiers.push(OMNISHELF_REVIEW_MODIFIER);
 
+    // Serie (Opera) solo se il "seriesName" di OmniShelf conta al massimo 9 volumi distinti;
+    // oltre le 9 unità è più una Collana Editoriale a numerazione lunga che una serie narrativa,
+    // e finisce invece sull'Istanza (vedi sotto).
+    const firstSeriesName = (first.seriesName || '').trim();
+    const firstIsLongSeries = firstSeriesName && (seriesSizes.get(firstSeriesName) || 0) > 9;
+    const operaSeries = firstSeriesName && !firstIsLongSeries ? firstSeriesName : null;
+    const operaSeriesIndex = operaSeries && first.seriesVol ? (parseInt(first.seriesVol, 10) || null) : null;
+
     const opera = newOperaSkeleton({
-      title: first.title, authors: [first.author], description: first.info || '', macro: chosenMacro,
+      title: first.title, authors: splitOmnishelfAuthors(first.author), description: first.info || '', macro: chosenMacro,
+      series: operaSeries, seriesIndex: operaSeriesIndex,
       subgenres: mergedTags.subgenres, microgenres: mergedTags.microgenres, modifiers: mergedTags.modifiers,
     });
 
@@ -1019,11 +1084,19 @@ async function commitOmnishelfMigration(omnishelfData, plan) {
       }
       const edition = editionsByKey.get(edKey);
       const coverBase64 = await compressOmnishelfCover(book.coverUrl);
+
+      // Collana Editoriale (Istanza) solo per i "seriesName" con più di 9 volumi distinti.
+      const bookSeriesName = (book.seriesName || '').trim();
+      const bookIsLongSeries = bookSeriesName && (seriesSizes.get(bookSeriesName) || 0) > 9;
+      const collanaEditoriale = bookIsLongSeries ? bookSeriesName : '';
+      const numeroCollana = bookIsLongSeries && book.seriesVol ? (parseInt(book.seriesVol, 10) || null) : null;
+
       const instance = newInstanceSkeleton({
         format: OMNISHELF_FORMAT_MAP[book.format] || 'E-book',
         isbn: book.isbn || '', rating: book.rating || 0,
         ownership: (book.wishlist && book.wishlist !== 'NONE') ? 'wishlist' : 'owned',
         totalPages: book.totalPages || null, coverBase64,
+        collanaEditoriale, numeroCollana,
       });
       const session = buildInitialSessionFromOmnishelfBook(book, readingLogs);
       if (session) instance.sessions.push(session);
@@ -1234,7 +1307,7 @@ function renderNavOrderList() {
   const ordered = getOrderedSections();
   el.innerHTML = ordered.map((s, idx, arr) => `
     <div class="flex items-center justify-between ui-card border rounded-xl px-3 py-2">
-      <span class="flex items-center gap-2 text-sm font-semibold"><span>${s.icon}</span>${s.label}</span>
+      <span class="flex items-center gap-2 text-sm font-semibold"><span class="w-4 h-4 shrink-0">${s.icon}</span>${s.label}</span>
       <div class="flex gap-1">
         <button onclick="moveNavItem('${s.key}', -1)" ${idx === 0 ? 'disabled' : ''}
           class="ui-btn-sec w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center ${idx === 0 ? 'opacity-30 cursor-not-allowed' : ''}">↑</button>
@@ -1633,6 +1706,8 @@ async function openInstanceModal(operaId, editionId, instanceId = null) {
     document.getElementById('instance-ownership').value = instance.ownership;
     document.getElementById('instance-isbn').value = instance.isbn || '';
     document.getElementById('instance-location').value = instance.location || '';
+    document.getElementById('instance-collana').value = instance.collanaEditoriale || '';
+    document.getElementById('instance-numero-collana').value = instance.numeroCollana ?? '';
     document.getElementById('instance-total-pages').value = instance.totalPages ?? '';
     document.getElementById('instance-total-minutes').value = instance.totalMinutes ?? '';
     document.getElementById('instance-description').value = instance.description || '';
@@ -1645,6 +1720,8 @@ async function openInstanceModal(operaId, editionId, instanceId = null) {
     document.getElementById('instance-ownership').value = 'owned';
     document.getElementById('instance-isbn').value = '';
     document.getElementById('instance-location').value = '';
+    document.getElementById('instance-collana').value = '';
+    document.getElementById('instance-numero-collana').value = '';
     document.getElementById('instance-total-pages').value = '';
     document.getElementById('instance-total-minutes').value = '';
     document.getElementById('instance-description').value = '';
@@ -1737,6 +1814,8 @@ async function saveInstanceFromForm() {
     ownership: document.getElementById('instance-ownership').value,
     isbn: document.getElementById('instance-isbn').value.trim(),
     location: document.getElementById('instance-location').value.trim(),
+    collanaEditoriale: document.getElementById('instance-collana').value.trim(),
+    numeroCollana: document.getElementById('instance-numero-collana').value ? Number(document.getElementById('instance-numero-collana').value) : null,
     description: document.getElementById('instance-description').value.trim(),
     rating: parseInt(document.getElementById('instance-rating-value').value || '0', 10),
     coverBase64: document.getElementById('instance-cover-base64').value || '',
@@ -2138,6 +2217,7 @@ async function renderCatalogo() {
                     ${inst.coverBase64 ? `<img src="${inst.coverBase64}" onclick="openCoverViewer(this.src)" class="w-5 h-7 object-cover rounded shrink-0 cursor-zoom-in">` : ''}
                     <span class="truncate">
                       ${inst.format === 'Cartaceo' ? '📕' : inst.format === 'Audiobook' ? '🎧' : '📱'} ${inst.format}
+                      ${inst.collanaEditoriale ? ` · ${inst.collanaEditoriale}${inst.numeroCollana ? ' #' + inst.numeroCollana : ''}` : ''}
                       · ${getDisplayStatusLabel(getInstanceDisplayStatus(inst), inst.format === 'Audiobook')}${instanceProgressDetail(inst)}${inst.rating ? ' · ' + '★'.repeat(inst.rating) : ''}
                     </span>
                   </span>
@@ -2565,6 +2645,21 @@ async function importDatabaseFromObject(data) {
 
 // Ricarica lo stato applicativo (tema, ordine nav, dimensione copertine, filtri, catalogo,
 // tassonomia) dopo un import che ha sostituito interamente il database.
+// Cancella TUTTO (store "opere" e "settings") e riporta l'app allo stato di un'installazione
+// nuova. Doppia conferma esplicita perché non è reversibile — a differenza dell'import JSON,
+// qui non c'è nessun file da cui recuperare i dati se non se n'è fatto un backup prima.
+async function resetEntireDatabase() {
+  const firstOk = confirm('Vuoi davvero cancellare TUTTO il database di Opera Codex? Ogni Opera, Edizione, Istanza e Sessione di lettura verrà eliminata per sempre. Questa azione non è reversibile.');
+  if (!firstOk) return;
+  const secondOk = confirm('Ultima conferma: si ricomincia completamente da zero, anche le impostazioni (tema, ordine menu, dimensione copertine, credenziali WebDAV) torneranno ai valori di default. Procedere davvero?');
+  if (!secondOk) return;
+
+  await clearStore('opere');
+  await clearStore('settings');
+  await reloadAppStateAfterImport();
+  alert('Database azzerato: sei ripartito da zero.');
+}
+
 async function reloadAppStateAfterImport() {
   currentTheme = await getSetting('theme', 'theme-soft');
   document.body.className = `${currentTheme} font-sans antialiased h-full`;
@@ -2573,6 +2668,9 @@ async function reloadAppStateAfterImport() {
   currentNavOrder = (Array.isArray(savedOrder) && savedOrder.length === SECTIONS.length) ? savedOrder : DEFAULT_NAV_ORDER;
   navShowLabels = await getSetting('navShowLabels', true);
   coverMaxSize = await getSetting('coverMaxSize', 200);
+  document.getElementById('webdav-url').value = await getSetting('webdavUrl', '');
+  document.getElementById('webdav-username').value = await getSetting('webdavUsername', '');
+  document.getElementById('webdav-password').value = '';
 
   renderNav('nav-desktop-slot', { vertical: true });
   renderNav('nav-mobile-slot', { vertical: false });
