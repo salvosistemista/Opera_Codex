@@ -85,6 +85,7 @@
       <div class="flex items-center gap-2">
         <span class="text-xl leading-none">📖</span>
         <h1 class="font-bold text-lg tracking-tight">Opera Codex</h1>
+        <span id="app-version-badge" class="ui-muted text-[10px] font-semibold self-end mb-0.5"></span>
       </div>
       <button id="drawer-toggle-btn" onclick="openDrawer()"
         class="md:hidden ui-btn-sec px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1">
@@ -121,7 +122,7 @@
         </div>
         <p class="ui-muted text-sm mb-3">Vista principale della libreria (Opere → Edizioni → Istanze). Filtri completi nel pannello laterale / cassetto "☰ Filtri".</p>
         <div class="flex flex-wrap items-center gap-2 mb-3">
-          <input id="catalog-search-inline" type="text" placeholder="Cerca per titolo, autore, descrizione, serie o tag..." oninput="setSearchFilter(this.value)" class="catalog-search-input ui-input flex-1 min-w-[12rem] p-2.5 rounded-xl border text-sm">
+          <input id="catalog-search-inline" type="text" placeholder="Cerca per titolo, autore, descrizione, serie, ISBN o tag..." oninput="setSearchFilter(this.value)" class="catalog-search-input ui-input flex-1 min-w-[12rem] p-2.5 rounded-xl border text-sm">
           <select id="catalog-sort-select" onchange="setSortOrder(this.value)" class="catalog-sort-select ui-input p-2.5 rounded-xl border text-xs">
             <option value="title-asc">Titolo (A-Z)</option>
             <option value="author-asc">Autore (A-Z)</option>
@@ -171,6 +172,12 @@
         </div>
 
         <div class="ui-card border rounded-2xl p-5 mt-4">
+          <p class="text-xs font-bold uppercase tracking-wider ui-accent-text mb-1">Schermo intero</p>
+          <p class="ui-muted text-xs mb-3">Nasconde la barra degli indirizzi e gli altri elementi del browser. Funziona su desktop e sulla maggior parte dei browser Android; il supporto su iOS/Safari è limitato.</p>
+          <button id="fullscreen-toggle-btn" onclick="toggleFullscreen()" class="ui-btn-sec w-full py-2 rounded-lg text-xs font-semibold"></button>
+        </div>
+
+        <div class="ui-card border rounded-2xl p-5 mt-4">
           <p class="text-xs font-bold uppercase tracking-wider ui-accent-text mb-1">Menu di navigazione (mobile)</p>
           <p class="ui-muted text-xs mb-3">Riordina le sezioni con le frecce e scegli se mostrare il testo sotto le icone, per recuperare spazio nella barra in basso senza invadere l'area dei gesti dello smartphone.</p>
           <button id="nav-labels-toggle-btn" onclick="toggleNavLabels()" class="ui-btn-sec px-3 py-1.5 rounded-lg text-xs font-semibold mb-3"></button>
@@ -193,6 +200,14 @@
               <input type="file" accept="application/json" onchange="onImportFileSelected(this.files[0]); this.value='';" class="hidden">
             </label>
           </div>
+        </div>
+
+        <div class="ui-card border rounded-2xl p-5 mt-4">
+          <p class="text-xs font-bold uppercase tracking-wider ui-accent-text mb-1">Migrazione da OmniShelf</p>
+          <p class="ui-muted text-xs mb-3">Importa una tantum i libri dal backup JSON di OmniShelf. Le Opere vengono <strong>aggiunte</strong> al catalogo attuale, non lo sostituiscono — se hai già inserito a mano alcuni di questi libri rischi doppioni: verifica prima di procedere.</p>
+          <input type="file" id="omnishelf-file-input" accept="application/json" onchange="onOmnishelfFileSelected(this.files[0])" class="text-[10px] mb-3">
+          <div id="omnishelf-migration-preview" class="hidden ui-input border rounded-xl p-3 text-xs mb-3 flex flex-col gap-1"></div>
+          <button id="omnishelf-migration-confirm-btn" onclick="confirmOmnishelfMigration()" class="hidden ui-accent-bg text-white py-2 rounded-lg text-xs font-semibold w-full"></button>
         </div>
       </section>
 
@@ -218,6 +233,7 @@
   <datalist id="datalist-subgenres"></datalist>
   <datalist id="datalist-microgenres"></datalist>
   <datalist id="datalist-modifiers"></datalist>
+  <datalist id="datalist-authors"></datalist>
 
   <!-- ===================== MODALE OPERA (L1) ===================== -->
   <div id="modal-opera" class="hidden fixed inset-0 z-50 flex items-end md:items-center justify-center">
@@ -234,8 +250,8 @@
           <input id="opera-title" type="text" class="ui-input w-full p-2.5 rounded-xl border mt-1">
         </div>
         <div>
-          <label class="text-xs font-semibold ui-muted">Autore *</label>
-          <input id="opera-author" type="text" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+          <label class="text-xs font-semibold ui-muted">Autori * <span class="opacity-60">(separati da virgola, in ordine di importanza)</span></label>
+          <input id="opera-authors" type="text" list="datalist-authors" placeholder="es. Neil Gaiman, Terry Pratchett" class="ui-input w-full p-2.5 rounded-xl border mt-1">
         </div>
         <div>
           <label class="text-xs font-semibold ui-muted">Descrizione / trama concettuale</label>
@@ -322,6 +338,12 @@
           </div>
           <textarea id="edition-description" rows="2" class="ui-input w-full p-2.5 rounded-xl border mt-1"></textarea>
         </div>
+        <div id="edition-move-wrap" class="hidden border-t pt-3">
+          <p class="text-xs font-bold uppercase tracking-wider ui-accent-text mb-1">Sposta in un'altra Opera</p>
+          <p class="ui-muted text-[11px] mb-2">Le Istanze di questa Edizione si spostano insieme ad essa.</p>
+          <input id="edition-move-search" type="text" placeholder="Cerca l'Opera di destinazione (titolo o autore)..." oninput="onEditionMoveSearch(this.value)" class="ui-input w-full p-2 rounded-lg border text-xs mb-2">
+          <div id="edition-move-results" class="flex flex-col gap-1 max-h-32 overflow-y-auto"></div>
+        </div>
       </div>
       <div class="flex items-center justify-between mt-5 gap-2">
         <button id="edition-delete-btn" onclick="deleteEditionFromModal()" class="hidden text-red-500 text-xs font-semibold px-3 py-2 rounded-xl">🗑 Elimina Edizione</button>
@@ -379,10 +401,10 @@
           <input id="instance-total-minutes" type="number" min="0" class="ui-input w-full p-2.5 rounded-xl border mt-1">
         </div>
         <div>
-          <label class="text-xs font-semibold ui-muted block mb-1">Copertina <span class="opacity-60">(ridimensionata automaticamente a 200px)</span></label>
+          <label class="text-xs font-semibold ui-muted block mb-1">Copertina <span class="opacity-60" id="instance-cover-size-hint"></span></label>
           <input type="hidden" id="instance-cover-base64">
           <div class="flex items-start gap-3">
-            <img id="instance-cover-preview" class="hidden w-16 h-24 object-cover rounded-lg border ui-input" alt="Copertina">
+            <img id="instance-cover-preview" onclick="if(this.src) openCoverViewer(this.src)" class="hidden w-16 h-24 object-cover rounded-lg border ui-input cursor-zoom-in" alt="Copertina">
             <div class="flex-1 flex flex-col gap-1.5">
               <input type="file" accept="image/*" onchange="onCoverFileSelected(this.files[0])" class="text-[10px]">
               <div class="flex gap-1">
@@ -467,6 +489,9 @@
    Storage: IndexedDB. Store "opere" (Opera/Edizione/Istanza annidate) + "settings".
    ===================================================================================== */
 
+// Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
+const APP_VERSION = '1.5';
+
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 2; // bump da 1 a 2: aggiunge lo store "settings" anche a chi ha già aperto il Punto 1
 const STORE_OPERE = 'opere';
@@ -536,6 +561,34 @@ function addNormalizedTag(list, raw) {
   return list.some(t => t.toLowerCase() === norm.toLowerCase()) ? list : [...list, norm];
 }
 function normalizeTagList(rawList) { return (rawList || []).reduce((acc, t) => addNormalizedTag(acc, t), []); }
+
+// Gli autori NON passano da normalizeTag: quella funzione capitalizza ogni parola e romperebbe
+// nomi come "J.R.R. Tolkien" o "e.e. cummings". Qui solo trim + deduplica case-insensitive,
+// mantenendo la capitalizzazione esatta digitata dall'utente.
+function parseAuthorsList(rawList) {
+  const seen = new Set();
+  const result = [];
+  (rawList || []).forEach(raw => {
+    const name = String(raw).trim();
+    if (!name) return;
+    const key = name.toLowerCase();
+    if (!seen.has(key)) { seen.add(key); result.push(name); }
+  });
+  return result;
+}
+// Autori come array, con fallback per Opere create prima dell'introduzione degli autori multipli
+// (quando il campo era una singola stringa "author").
+function getOperaAuthors(opera) {
+  if (Array.isArray(opera.authors) && opera.authors.length) return opera.authors;
+  return opera.author ? [opera.author] : [];
+}
+// "Autore1", "Autore1 e Autore2", "Autore1, Autore2 e Autore3" — per la visualizzazione.
+function formatAuthorsDisplay(authors) {
+  if (!authors || !authors.length) return '';
+  if (authors.length === 1) return authors[0];
+  return authors.slice(0, -1).join(', ') + ' e ' + authors[authors.length - 1];
+}
+
 async function getAllTags(level) {
   const opere = await dbGetAll();
   const set = new Set();
@@ -584,8 +637,8 @@ async function mergeTagsEverywhere(level, tagsToMerge, canonicalNameRaw) {
 }
 
 // --- OPERA (L1) ---------------------------------------------------------------------------
-function newOperaSkeleton({ title, author, description = '', series = null, seriesIndex = null, macro, subgenres = [], microgenres = [], modifiers = [] }) {
-  return { id: uid('op'), title, author, description, series, seriesIndex, macro,
+function newOperaSkeleton({ title, authors = [], description = '', series = null, seriesIndex = null, macro, subgenres = [], microgenres = [], modifiers = [] }) {
+  return { id: uid('op'), title, authors: parseAuthorsList(authors), description, series, seriesIndex, macro,
     subgenres: normalizeTagList(subgenres), microgenres: normalizeTagList(microgenres), modifiers: normalizeTagList(modifiers),
     createdAt: getLocalDateString(), editions: [] };
 }
@@ -594,6 +647,7 @@ async function updateOpera(operaId, patch) {
   const opera = await dbGet(operaId);
   if (!opera) throw new Error('Opera non trovata: ' + operaId);
   ['subgenres', 'microgenres', 'modifiers'].forEach(key => { if (patch[key]) patch[key] = normalizeTagList(patch[key]); });
+  if (patch.authors) patch.authors = parseAuthorsList(patch.authors);
   const updated = { ...opera, ...patch, id: opera.id, editions: opera.editions };
   await dbSave(updated); return updated;
 }
@@ -619,6 +673,22 @@ async function deleteEdition(operaId, editionId) {
   const opera = await dbGet(operaId);
   if (!opera) throw new Error('Opera non trovata: ' + operaId);
   opera.editions = opera.editions.filter(e => e.id !== editionId); await dbSave(opera);
+}
+
+// Sposta un'Edizione (con tutte le sue Istanze annidate) da un'Opera a un'altra.
+async function moveEditionToOpera(fromOperaId, editionId, toOperaId) {
+  if (fromOperaId === toOperaId) return null;
+  const fromOpera = await dbGet(fromOperaId);
+  const toOpera = await dbGet(toOperaId);
+  if (!fromOpera) throw new Error('Opera di origine non trovata: ' + fromOperaId);
+  if (!toOpera) throw new Error('Opera di destinazione non trovata: ' + toOperaId);
+  const idx = fromOpera.editions.findIndex(e => e.id === editionId);
+  if (idx === -1) throw new Error('Edizione non trovata nell\'Opera di origine: ' + editionId);
+  const [edition] = fromOpera.editions.splice(idx, 1);
+  toOpera.editions.push(edition);
+  await dbSave(fromOpera);
+  await dbSave(toOpera);
+  return edition;
 }
 
 // --- ISTANZA (L3) ---------------------------------------------------------------------------
@@ -768,14 +838,191 @@ async function updateLogEntryDate(operaId, editionId, instanceId, sessionId, old
   await dbSave(opera); return session;
 }
 
+/* =====================================================================================
+   MIGRAZIONE UNA TANTUM DA OMNISHELF (Punto 7)
+   Logica concordata: raggruppamento Opere per titolo+autore normalizzati (esatto, non
+   fuzzy — la fusione di titoli simili ma non identici resta un miglioramento futuro,
+   segnalato all'utente, non implementato qui); Edizioni per editore+anno (non ISBN, che va
+   sull'Istanza); una Sessione iniziale per Istanza costruita da stato+reading_logs di
+   OmniShelf; Macro dedotta da collections/genres con coda di revisione (mai una decisione
+   automatica silenziosa) per i casi mancanti o contraddittori.
+   ===================================================================================== */
+
+const OMNISHELF_STATUS_MAP = { TO_READ: 'Da Leggere', READING: 'In Lettura', COMPLETED: 'Completato', DROPPED: 'Abbandonato' };
+const OMNISHELF_FORMAT_MAP = { 'E-book': 'E-book', 'Fisico': 'Cartaceo', 'Audio-libro': 'Audiobook' };
+const OMNISHELF_MACRO_FROM_GENRE = { 'Manga/Comics': 'Fumetti & Illustrati', 'Poesia': 'Poesia & Teatro', 'Teatro': 'Poesia & Teatro' };
+const OMNISHELF_REVIEW_MODIFIER = 'Da Revisionare (Macro)';
+
+// Tabella di mappatura concordata dei 31 generi reali di OmniShelf verso Sottogenere/
+// Micro-genere/Modificatori. "Manga/Comics" converge sul sottogenere generico "Fumetto/Comics":
+// la scomposizione fine in Manga/Fumetto/Graphic Novel richiede una revisione manuale libro per
+// libro, non deducibile automaticamente dal solo tag di origine.
+const OMNISHELF_TAG_MAP = {
+  'Fantascienza': ['subgenres', 'Fantascienza'], 'Fantasy': ['subgenres', 'Fantasy'], 'Fantastico': ['subgenres', 'Fantastico'],
+  'Horror': ['subgenres', 'Horror'], 'Giallo/Thriller': ['subgenres', 'Giallo/Thriller'], 'Storico': ['subgenres', 'Storico'],
+  'Avventura': ['subgenres', 'Avventura'], 'Filosofia': ['subgenres', 'Filosofia'], 'Psicologia': ['subgenres', 'Psicologia'],
+  'Spiritualità': ['subgenres', 'Spiritualità'], 'Guida/Viaggi': ['subgenres', 'Guida/Viaggi'], 'Manuale': ['subgenres', 'Manuale'],
+  'Esegesi': ['subgenres', 'Esegesi'], 'Biografia': ['subgenres', 'Biografia'], 'Biografia/Memoir': ['subgenres', 'Biografia'],
+  'Poesia': ['subgenres', 'Poesia'], 'Teatro': ['subgenres', 'Teatro'], 'Ludologica': ['subgenres', 'Ludologica'],
+  'Manga/Comics': ['subgenres', 'Fumetto/Comics'],
+  'Apocalittico/Post': ['microgenres', 'Apocalittico/Post'], 'Distopia/Utopia/Ucronia': ['microgenres', 'Distopia/Utopia/Ucronia'],
+  'Epica': ['microgenres', 'Epica'], 'Fantasmi': ['microgenres', 'Fantasmi'], 'Gotico': ['microgenres', 'Gotico'],
+  'Medioevo': ['microgenres', 'Medioevo'], 'Supereroi': ['microgenres', 'Supereroi'], 'Weird': ['microgenres', 'Weird'],
+  'Giappone': ['microgenres', 'Giappone'],
+  'Racconti': ['modifiers', 'Racconti'], 'Classici': ['modifiers', 'Classici'], 'Ragazzi': ['modifiers', 'Ragazzi'],
+};
+
+function normalizeMigrationKey(str) {
+  return String(str || '').trim().toLowerCase().replace(/\s+/g, ' ').replace(/['’]/g, "'");
+}
+
+// Macro dedotta da collections (Narrativa/Saggistica) o da segnali nei genres. needsReview=true
+// se manca ogni segnale, o se sia Narrativa sia Saggistica sono presenti insieme (contraddizione).
+function deriveMacroFromOmnishelfBook(book) {
+  const cols = book.collections || [];
+  const gens = book.genres || [];
+  for (const g of gens) { if (OMNISHELF_MACRO_FROM_GENRE[g]) return { macro: OMNISHELF_MACRO_FROM_GENRE[g], needsReview: false }; }
+  const hasNarr = cols.includes('Narrativa');
+  const hasSagg = cols.includes('Saggistica');
+  if (hasNarr && hasSagg) return { macro: 'Narrativa', needsReview: true };
+  if (hasNarr) return { macro: 'Narrativa', needsReview: false };
+  if (hasSagg) return { macro: 'Saggistica', needsReview: false };
+  return { macro: 'Narrativa', needsReview: true };
+}
+
+function mapOmnishelfTags(book) {
+  const result = { subgenres: [], microgenres: [], modifiers: [] };
+  (book.genres || []).forEach(g => {
+    const mapping = OMNISHELF_TAG_MAP[g];
+    if (mapping) { const [level, name] = mapping; if (!result[level].includes(name)) result[level].push(name); }
+  });
+  return result;
+}
+
+// Una Sessione iniziale per Istanza, solo se il libro ha già un minimo di attività di lettura
+// (coerente col nostro modello: nessuna sessione = "Da Leggere").
+function buildInitialSessionFromOmnishelfBook(book, readingLogs) {
+  const status = OMNISHELF_STATUS_MAP[book.status] || 'Da Leggere';
+  if (status === 'Da Leggere') return null;
+  const logsForBook = (readingLogs || []).filter(l => l.bookId === book.id)
+    .map(l => ({ date: l.date, unitsRead: l.pagesRead || 0, reachedUnit: l.reachedPage || 0 }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return {
+    id: uid('sess'),
+    startDate: book.startDate || (logsForBook[0] ? logsForBook[0].date : null),
+    endDate: status === 'Completato' ? (book.endDate || (logsForBook.length ? logsForBook[logsForBook.length - 1].date : null)) : null,
+    status,
+    currentUnit: book.currentPage || (logsForBook.length ? logsForBook[logsForBook.length - 1].reachedUnit : 0),
+    readingLog: logsForBook,
+  };
+}
+
+// Il campo "coverUrl" di OmniShelf, nonostante il nome, contiene già l'immagine in Base64
+// (non un URL remoto): la ricomprimiamo comunque alla dimensione scelta in Impostazioni,
+// come per qualunque altra copertina dell'app.
+async function compressOmnishelfCover(dataUri) {
+  if (!dataUri) return '';
+  try {
+    const res = await fetch(dataUri);
+    const blob = await res.blob();
+    return await resizeAndCompressImageFromBlob(blob, coverMaxSize);
+  } catch (err) {
+    console.warn('Copertina OmniShelf non elaborabile:', err.message);
+    return '';
+  }
+}
+
+async function parseOmnishelfExport(file) {
+  const text = await file.text();
+  const data = JSON.parse(text);
+  if (!data || !Array.isArray(data.books)) throw new Error('Il file non sembra un export di OmniShelf valido: manca l\'elenco "books".');
+  return data;
+}
+
+// Fase di anteprima (nessuna scrittura su DB): raggruppa e conta, senza creare nulla.
+function buildOmnishelfMigrationPlan(omnishelfData) {
+  const books = omnishelfData.books;
+  const groups = new Map();
+  books.forEach(book => {
+    const key = normalizeMigrationKey(book.title) + '|' + normalizeMigrationKey(book.author);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(book);
+  });
+
+  let reviewCount = 0, instanceCount = 0, sessionCount = 0;
+  groups.forEach(booksInGroup => {
+    const macroResults = booksInGroup.map(deriveMacroFromOmnishelfBook);
+    const macroConflict = new Set(macroResults.map(m => m.macro)).size > 1;
+    if (macroConflict || macroResults.some(m => m.needsReview)) reviewCount++;
+    instanceCount += booksInGroup.length;
+    sessionCount += booksInGroup.filter(b => OMNISHELF_STATUS_MAP[b.status] && OMNISHELF_STATUS_MAP[b.status] !== 'Da Leggere').length;
+  });
+
+  return { groups, totalBooks: books.length, totalOpere: groups.size, reviewCount, instanceCount, sessionCount };
+}
+
+// Fase di scrittura effettiva: un solo dbSave per Opera (con tutte le sue Edizioni/Istanze/
+// Sessioni già annidate), non una chiamata per ogni singolo elemento — importante per i tempi
+// con migliaia di libri.
+async function commitOmnishelfMigration(omnishelfData, plan) {
+  const readingLogs = omnishelfData.reading_logs || [];
+  let created = 0;
+
+  for (const booksInGroup of plan.groups.values()) {
+    const first = booksInGroup[0];
+    const macroResults = booksInGroup.map(deriveMacroFromOmnishelfBook);
+    const macroConflict = new Set(macroResults.map(m => m.macro)).size > 1;
+    const needsReview = macroConflict || macroResults.some(m => m.needsReview);
+    const chosenMacro = macroResults[0].macro;
+
+    const mergedTags = { subgenres: [], microgenres: [], modifiers: [] };
+    booksInGroup.forEach(b => {
+      const t = mapOmnishelfTags(b);
+      ['subgenres', 'microgenres', 'modifiers'].forEach(level => t[level].forEach(v => { if (!mergedTags[level].includes(v)) mergedTags[level].push(v); }));
+    });
+    if (needsReview) mergedTags.modifiers.push(OMNISHELF_REVIEW_MODIFIER);
+
+    const opera = newOperaSkeleton({
+      title: first.title, authors: [first.author], description: first.info || '', macro: chosenMacro,
+      subgenres: mergedTags.subgenres, microgenres: mergedTags.microgenres, modifiers: mergedTags.modifiers,
+    });
+
+    const editionsByKey = new Map();
+    for (const book of booksInGroup) {
+      const edKey = normalizeMigrationKey(book.publisher) + '|' + (book.publishYear || '');
+      if (!editionsByKey.has(edKey)) {
+        const yearNum = book.publishYear && String(book.publishYear) !== '0101' ? parseInt(String(book.publishYear).slice(0, 4), 10) : null;
+        editionsByKey.set(edKey, newEditionSkeleton({ publisher: book.publisher || '', year: yearNum || null, language: 'Italiano' }));
+      }
+      const edition = editionsByKey.get(edKey);
+      const coverBase64 = await compressOmnishelfCover(book.coverUrl);
+      const instance = newInstanceSkeleton({
+        format: OMNISHELF_FORMAT_MAP[book.format] || 'E-book',
+        isbn: book.isbn || '', rating: book.rating || 0,
+        ownership: (book.wishlist && book.wishlist !== 'NONE') ? 'wishlist' : 'owned',
+        totalPages: book.totalPages || null, coverBase64,
+      });
+      const session = buildInitialSessionFromOmnishelfBook(book, readingLogs);
+      if (session) instance.sessions.push(session);
+      edition.instances.push(instance);
+    }
+    opera.editions = [...editionsByKey.values()];
+
+    await dbSave(opera);
+    created++;
+  }
+  return created;
+}
+
 window.OperaCodex = {
-  createOpera, updateOpera, deleteOpera, addEdition, updateEdition, deleteEdition,
+  createOpera, updateOpera, deleteOpera, addEdition, updateEdition, deleteEdition, moveEditionToOpera,
   addInstance, updateInstance, deleteInstance,
   addSession, deleteSession, updateSessionStatus, updateSessionDates,
   setSessionProgressAbsolute, updateLogEntryDate,
   getInstanceDisplayStatus, getInstanceRepresentativeSession, getInstanceTotalUnit,
   getAllTags, getTagUsageCounts, renameTagEverywhere, deleteTagEverywhere, mergeTagsEverywhere,
   normalizeTag, dbGet, dbGetAll, dbDelete, getSetting, setSetting,
+  parseOmnishelfExport, buildOmnishelfMigrationPlan, commitOmnishelfMigration,
 };
 
 /* =====================================================================================
@@ -1043,6 +1290,32 @@ async function applyTheme(themeKey) {
   await setSetting('theme', themeKey);
 }
 
+function isFullscreenActive() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+function updateFullscreenBtn() {
+  const btn = document.getElementById('fullscreen-toggle-btn');
+  if (!btn) return;
+  btn.textContent = isFullscreenActive() ? '⛶ Esci da schermo intero' : '⛶ Attiva schermo intero';
+}
+async function toggleFullscreen() {
+  try {
+    if (isFullscreenActive()) {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) await document.webkitExitFullscreen();
+    } else {
+      const el = document.documentElement;
+      if (el.requestFullscreen) await el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen();
+      else { alert('Questo browser non supporta la modalità schermo intero.'); return; }
+    }
+  } catch (err) {
+    alert('Impossibile attivare/disattivare lo schermo intero: ' + err.message);
+  }
+}
+document.addEventListener('fullscreenchange', updateFullscreenBtn);
+document.addEventListener('webkitfullscreenchange', updateFullscreenBtn);
+
 function renderCoverSizePicker() {
   const el = document.getElementById('cover-size-picker');
   el.innerHTML = COVER_SIZE_OPTIONS.map(size => `
@@ -1074,6 +1347,7 @@ function showInitError(err) {
 
 async function initApp() {
   try {
+    document.getElementById('app-version-badge').textContent = 'v' + APP_VERSION;
     const savedTheme = await getSetting('theme', 'theme-soft');
     currentTheme = savedTheme;
     document.body.className = `${savedTheme} font-sans antialiased h-full`;
@@ -1087,6 +1361,7 @@ async function initApp() {
     renderNav('nav-mobile-slot', { vertical: false });
     await renderFiltersPanels();
     renderThemePicker();
+    updateFullscreenBtn();
     renderCoverSizePicker();
     renderNavOrderList();
     updateNavLabelsToggleBtn();
@@ -1111,8 +1386,8 @@ function parseTagInput(str) {
 }
 
 async function refreshTagDatalists() {
-  const [subgenres, microgenres, modifiers] = await Promise.all([
-    getAllTags('subgenres'), getAllTags('microgenres'), getAllTags('modifiers'),
+  const [subgenres, microgenres, modifiers, authors] = await Promise.all([
+    getAllTags('subgenres'), getAllTags('microgenres'), getAllTags('modifiers'), getAllTags('authors'),
   ]);
   const fill = (id, values) => {
     document.getElementById(id).innerHTML = values.map(v => `<option value="${v}">`).join('');
@@ -1120,6 +1395,7 @@ async function refreshTagDatalists() {
   fill('datalist-subgenres', subgenres);
   fill('datalist-microgenres', microgenres);
   fill('datalist-modifiers', modifiers);
+  fill('datalist-authors', authors);
 }
 
 // --- OPERA -------------------------------------------------------------------------------
@@ -1133,7 +1409,7 @@ function openOperaModal(operaId = null) {
     document.getElementById('modal-opera-title').textContent = 'Modifica Opera';
     dbGet(operaId).then(opera => {
       document.getElementById('opera-title').value = opera.title || '';
-      document.getElementById('opera-author').value = opera.author || '';
+      document.getElementById('opera-authors').value = getOperaAuthors(opera).join(', ');
       document.getElementById('opera-description').value = opera.description || '';
       document.getElementById('opera-series').value = opera.series || '';
       document.getElementById('opera-series-index').value = opera.seriesIndex ?? '';
@@ -1144,7 +1420,7 @@ function openOperaModal(operaId = null) {
     });
   } else {
     document.getElementById('modal-opera-title').textContent = 'Nuova Opera';
-    ['opera-title','opera-author','opera-description','opera-series','opera-series-index',
+    ['opera-title','opera-authors','opera-description','opera-series','opera-series-index',
      'opera-subgenres','opera-microgenres','opera-modifiers'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('opera-macro').value = 'Narrativa';
   }
@@ -1154,11 +1430,11 @@ function openOperaModal(operaId = null) {
 async function saveOperaFromForm() {
   const operaId = document.getElementById('opera-id').value;
   const title = document.getElementById('opera-title').value.trim();
-  const author = document.getElementById('opera-author').value.trim();
-  if (!title || !author) { alert('Titolo e Autore sono obbligatori.'); return; }
+  const authors = parseAuthorsList(document.getElementById('opera-authors').value.split(','));
+  if (!title || !authors.length) { alert('Titolo e almeno un Autore sono obbligatori.'); return; }
 
   const data = {
-    title, author,
+    title, authors,
     description: document.getElementById('opera-description').value.trim(),
     series: document.getElementById('opera-series').value.trim() || null,
     seriesIndex: document.getElementById('opera-series-index').value ? Number(document.getElementById('opera-series-index').value) : null,
@@ -1188,6 +1464,9 @@ async function openEditionModal(operaId, editionId = null) {
   document.getElementById('edition-opera-id').value = operaId;
   document.getElementById('edition-id').value = editionId || '';
   document.getElementById('edition-delete-btn').classList.toggle('hidden', !editionId);
+  document.getElementById('edition-move-wrap').classList.toggle('hidden', !editionId);
+  document.getElementById('edition-move-search').value = '';
+  document.getElementById('edition-move-results').innerHTML = '';
 
   const opera = await dbGet(operaId);
   document.getElementById('modal-edition').dataset.operaDescription = opera?.description || '';
@@ -1246,6 +1525,34 @@ async function deleteEditionFromModal() {
   await renderCatalogo();
 }
 
+async function onEditionMoveSearch(query) {
+  const resultsEl = document.getElementById('edition-move-results');
+  const q = query.trim().toLowerCase();
+  if (!q) { resultsEl.innerHTML = ''; return; }
+  const currentOperaId = document.getElementById('edition-opera-id').value;
+  const opere = await dbGetAll();
+  const matches = opere.filter(o => o.id !== currentOperaId &&
+    (o.title.toLowerCase().includes(q) || getOperaAuthors(o).some(a => a.toLowerCase().includes(q))));
+  resultsEl.innerHTML = matches.length
+    ? matches.slice(0, 8).map(o => `
+        <button type="button" onclick="moveEditionToOperaFromModal('${o.id}')" class="ui-btn-sec text-left px-2 py-1.5 rounded-lg text-xs">
+          <span class="font-semibold">${o.title}</span> <span class="ui-muted">— ${formatAuthorsDisplay(getOperaAuthors(o)) || 'autore sconosciuto'}</span>
+        </button>`).join('')
+    : '<p class="ui-muted text-xs">Nessuna Opera trovata.</p>';
+}
+
+async function moveEditionToOperaFromModal(targetOperaId) {
+  const sourceOperaId = document.getElementById('edition-opera-id').value;
+  const editionId = document.getElementById('edition-id').value;
+  if (!editionId) return;
+  const targetOpera = await dbGet(targetOperaId);
+  const ok = confirm(`Spostare questa Edizione (con tutte le sue Istanze) in "${targetOpera.title}"?`);
+  if (!ok) return;
+  await moveEditionToOpera(sourceOperaId, editionId, targetOperaId);
+  closeModal('modal-edition');
+  await renderCatalogo();
+}
+
 // --- ISTANZA -----------------------------------------------------------------------------
 
 function onInstanceFormatChange() {
@@ -1280,6 +1587,7 @@ async function openInstanceModal(operaId, editionId, instanceId = null) {
   document.getElementById('instance-id').value = instanceId || '';
   document.getElementById('instance-delete-btn').classList.toggle('hidden', !instanceId);
   document.getElementById('instance-sessions-wrap').classList.toggle('hidden', !instanceId);
+  document.getElementById('instance-cover-size-hint').textContent = `(ridimensionata automaticamente a ${coverMaxSize}px)`;
 
   const opera = await dbGet(operaId);
   const edition = opera.editions.find(e => e.id === editionId);
@@ -1637,10 +1945,12 @@ function operaMatchesFilters(opera) {
   const f = catalogFilters;
   const q = f.search.trim().toLowerCase();
   if (q) {
+    const allInstances = opera.editions.flatMap(e => e.instances);
     const haystack = [
-      opera.title, opera.author, opera.description, opera.series || '',
+      opera.title, ...getOperaAuthors(opera), opera.description, opera.series || '',
       ...opera.subgenres, ...opera.microgenres, ...opera.modifiers,
       ...opera.editions.map(e => e.alternateTitle || ''),
+      ...allInstances.map(i => i.isbn || ''), ...allInstances.map(i => i.location || ''),
     ].join(' ').toLowerCase();
     if (!haystack.includes(q)) return false;
   }
@@ -1664,7 +1974,9 @@ function instanceMatchesFilters(instance) {
 }
 function operaHasMatchingInstance(opera) {
   if (!catalogFilters.status.length && !catalogFilters.ownership.length && !catalogFilters.format.length) return true;
-  return opera.editions.some(e => e.instances.some(i => instanceMatchesFilters(i)));
+  const allInstances = opera.editions.flatMap(e => e.instances);
+  if (allInstances.length === 0) return true; // nessuna istanza: i filtri di istanza non hanno nulla da escludere
+  return allInstances.some(i => instanceMatchesFilters(i));
 }
 function operaMaxRating(opera) {
   let max = 0;
@@ -1673,7 +1985,7 @@ function operaMaxRating(opera) {
 }
 function sortOpere(list) {
   const arr = [...list];
-  if (catalogSort === 'author-asc') arr.sort((a, b) => (a.author || '').localeCompare(b.author || '', 'it'));
+  if (catalogSort === 'author-asc') arr.sort((a, b) => (getOperaAuthors(a)[0] || '').localeCompare(getOperaAuthors(b)[0] || '', 'it'));
   else if (catalogSort === 'series-asc') arr.sort((a, b) => {
     const c = (a.series || '').localeCompare(b.series || '', 'it');
     return c !== 0 ? c : (a.seriesIndex || 0) - (b.seriesIndex || 0);
@@ -1730,7 +2042,7 @@ async function renderCatalogo() {
       <div class="flex items-start justify-between gap-2">
         <div>
           <p class="font-bold">${opera.title}</p>
-          <p class="ui-muted text-xs">${opera.author}${opera.series ? ' · ' + opera.series + (opera.seriesIndex ? ' #' + opera.seriesIndex : '') : ''}</p>
+          <p class="ui-muted text-xs">${formatAuthorsDisplay(getOperaAuthors(opera))}${opera.series ? ' · ' + opera.series + (opera.seriesIndex ? ' #' + opera.seriesIndex : '') : ''}</p>
           <p class="text-[10px] font-semibold ui-accent-text uppercase tracking-wide mt-1">${opera.macro}</p>
           ${(opera.subgenres.length || opera.microgenres.length || opera.modifiers.length) ? `
             <div class="flex flex-wrap gap-1 mt-1.5">
@@ -1989,7 +2301,8 @@ async function applyApiResultAndCreate(idx) {
   if (!result) return;
   closeModal('modal-api-search');
 
-  const opera = await createOpera({ title: result.title, author: result.author, description: result.description || '', macro: 'Narrativa' });
+  const authors = result.author ? result.author.split(',').map(s => s.trim()).filter(Boolean) : [];
+  const opera = await createOpera({ title: result.title, authors, description: result.description || '', macro: 'Narrativa' });
   const edition = await addEdition(opera.id, { publisher: result.publisher || '', year: result.year || null, language: result.language || 'Italiano' });
 
   let coverBase64 = '';
@@ -2001,7 +2314,7 @@ async function applyApiResultAndCreate(idx) {
 
   await renderCatalogo();
   await openOperaModal(opera.id);
-  alert(`Opera creata da ${result.source}. Macro-categoria impostata su "Narrativa" di default: correggila e completa la tassonomia (nessuna delle 3 fonti la fornisce).`);
+  alert(`Opera creata da ${result.source}. Nessuna delle 3 fonti indica formato o categoria: correggi Macro-categoria e tassonomia qui, e verifica il Formato dell'Istanza (impostato di default su "Cartaceo", potrebbe non essere corretto).`);
 }
 
 /* =====================================================================================
@@ -2171,6 +2484,66 @@ async function reloadAppStateAfterImport() {
   await renderFiltersPanels();
   await renderCatalogo();
   if (currentSection === 'tassonomia') await renderTassonomia();
+}
+
+/* =====================================================================================
+   UI MIGRAZIONE DA OMNISHELF — anteprima (nessuna scrittura) poi conferma esplicita.
+   ===================================================================================== */
+
+let pendingOmnishelfData = null;
+let pendingOmnishelfPlan = null;
+
+async function onOmnishelfFileSelected(file) {
+  const previewEl = document.getElementById('omnishelf-migration-preview');
+  const confirmBtn = document.getElementById('omnishelf-migration-confirm-btn');
+  previewEl.classList.add('hidden');
+  confirmBtn.classList.add('hidden');
+  pendingOmnishelfData = null;
+  pendingOmnishelfPlan = null;
+  if (!file) return;
+
+  try {
+    pendingOmnishelfData = await parseOmnishelfExport(file);
+    pendingOmnishelfPlan = buildOmnishelfMigrationPlan(pendingOmnishelfData);
+    previewEl.innerHTML = `
+      <p><span class="ui-muted">Libri nel file:</span> <span class="font-semibold">${pendingOmnishelfPlan.totalBooks}</span></p>
+      <p><span class="ui-muted">Opere che verranno create:</span> <span class="font-semibold">${pendingOmnishelfPlan.totalOpere}</span></p>
+      <p><span class="ui-muted">Istanze totali:</span> <span class="font-semibold">${pendingOmnishelfPlan.instanceCount}</span></p>
+      <p><span class="ui-muted">Sessioni di lettura create:</span> <span class="font-semibold">${pendingOmnishelfPlan.sessionCount}</span></p>
+      <p><span class="ui-muted">Opere da revisionare (Macro mancante/contraddittoria):</span> <span class="font-semibold">${pendingOmnishelfPlan.reviewCount}</span></p>
+      <p class="ui-muted text-[10px] mt-1">Quelle da revisionare saranno taggate "${OMNISHELF_REVIEW_MODIFIER}" — trovale dal filtro Modificatori in Catalogo.</p>`;
+    previewEl.classList.remove('hidden');
+    confirmBtn.textContent = `Conferma e importa ${pendingOmnishelfPlan.totalOpere} Opere`;
+    confirmBtn.classList.remove('hidden');
+  } catch (err) {
+    previewEl.innerHTML = `<p class="text-red-500">${err.message}</p>`;
+    previewEl.classList.remove('hidden');
+  }
+}
+
+async function confirmOmnishelfMigration() {
+  if (!pendingOmnishelfData || !pendingOmnishelfPlan) return;
+  const ok = confirm(`Importare ${pendingOmnishelfPlan.totalOpere} Opere da OmniShelf? Verranno aggiunte al catalogo attuale (non lo sostituiscono).`);
+  if (!ok) return;
+
+  const confirmBtn = document.getElementById('omnishelf-migration-confirm-btn');
+  confirmBtn.disabled = true;
+  confirmBtn.textContent = 'Importazione in corso...';
+
+  const created = await commitOmnishelfMigration(pendingOmnishelfData, pendingOmnishelfPlan);
+
+  confirmBtn.disabled = false;
+  confirmBtn.classList.add('hidden');
+  document.getElementById('omnishelf-migration-preview').classList.add('hidden');
+  document.getElementById('omnishelf-file-input').value = '';
+  const reviewCount = pendingOmnishelfPlan.reviewCount;
+  pendingOmnishelfData = null;
+  pendingOmnishelfPlan = null;
+
+  await refreshTagDatalists();
+  await renderFiltersPanels();
+  await renderCatalogo();
+  alert(`Migrazione completata: ${created} Opere importate.${reviewCount ? ' ' + reviewCount + ' da revisionare (tag "' + OMNISHELF_REVIEW_MODIFIER + '").' : ''}`);
 }
 
 window.addEventListener('DOMContentLoaded', initApp);
