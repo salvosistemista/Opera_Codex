@@ -114,16 +114,15 @@
     <main class="flex-1 w-full px-4 py-5 pb-safe-nav">
 
       <section id="section-catalogo">
-        <div class="flex items-center justify-between mb-1 gap-2">
+        <div class="flex items-center justify-between mb-3 gap-2">
           <h2 class="text-xl font-bold">Catalogo</h2>
           <div class="flex gap-2 shrink-0">
             <button onclick="openApiSearchModal()" class="ui-btn-sec px-3 py-2 rounded-xl text-xs font-semibold">🔍 Cerca online</button>
-            <button onclick="openOperaModal()" class="ui-accent-bg text-white px-3 py-2 rounded-xl text-xs font-semibold">+ Nuova Opera</button>
+            <div id="new-opera-btn-slot"></div>
           </div>
         </div>
-        <p class="ui-muted text-sm mb-3">Vista principale della libreria (Opere → Edizioni → Istanze). Filtri completi nel pannello laterale / cassetto "☰ Filtri".</p>
         <div class="flex flex-wrap items-center gap-2 mb-3">
-          <input id="catalog-search-inline" type="text" placeholder="Cerca per titolo, autore, descrizione, serie, ISBN o tag..." oninput="setSearchFilter(this.value)" class="catalog-search-input ui-input flex-1 min-w-[12rem] p-2.5 rounded-xl border text-sm">
+          <input id="catalog-search-inline" type="text" placeholder="Cerca per titolo, autore, descrizione, serie, ISBN, collana o tag..." oninput="setSearchFilter(this.value)" class="catalog-search-input ui-input flex-1 min-w-[12rem] p-2.5 rounded-xl border text-sm">
           <select id="catalog-sort-select" onchange="setSortOrder(this.value)" class="catalog-sort-select ui-input p-2.5 rounded-xl border text-xs">
             <option value="title-asc">Titolo (A-Z)</option>
             <option value="author-asc">Autore (A-Z)</option>
@@ -423,7 +422,7 @@
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label class="text-xs font-semibold ui-muted">Collana Editoriale <span class="opacity-60">(opzionale)</span></label>
+            <label class="text-xs font-semibold ui-muted">Collana Editoriale</label>
             <input id="instance-collana" type="text" placeholder="es. Urania, Segretissimo..." class="ui-input w-full p-2.5 rounded-xl border mt-1">
           </div>
           <div>
@@ -529,7 +528,7 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.13';
+const APP_VERSION = '1.14';
 
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 2; // bump da 1 a 2: aggiunge lo store "settings" anche a chi ha già aperto il Punto 1
@@ -1450,6 +1449,7 @@ function showInitError(err) {
 async function initApp() {
   try {
     document.getElementById('app-version-badge').textContent = 'v' + APP_VERSION;
+    document.getElementById('new-opera-btn-slot').innerHTML = iconAddOperaButton();
     const savedTheme = await getSetting('theme', 'theme-soft');
     currentTheme = savedTheme;
     document.body.className = `${savedTheme} font-sans antialiased h-full`;
@@ -2015,6 +2015,18 @@ async function onLogDateChange(sessionId, oldDate, newDate) {
 
 // Icone a bottone "+ Edizione" (libri) e "+ Istanza" (codice a barre), con badge "+" — al posto
 // del solo testo, per pulsanti più compatti e riconoscibili a colpo d'occhio.
+// Icona "+ Nuova Opera" (libro aperto) con badge "+" — stesso stile delle icone Edizione/Istanza.
+function iconAddOperaButton() {
+  return `
+    <button onclick="openOperaModal()" title="Nuova Opera" class="ui-btn-sec relative h-9 w-11 rounded-lg flex items-center justify-center shrink-0">
+      <svg viewBox="0 0 24 24" class="w-5 h-5" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 5.5c2-1 4.5-1 6.5 0v13c-2-1-4.5-1-6.5 0z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M20 5.5c-2-1-4.5-1-6.5 0v13c2-1 4.5-1 6.5 0z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+      </svg>
+      <span class="absolute -top-1 -right-1 w-4 h-4 rounded-full ui-accent-bg text-white text-[10px] font-bold flex items-center justify-center leading-none">+</span>
+    </button>`;
+}
+
 function iconAddEditionButton(operaId) {
   return `
     <button onclick="openEditionModal('${operaId}')" title="Aggiungi Edizione" class="ui-btn-sec relative h-8 w-10 rounded-lg flex items-center justify-center shrink-0">
@@ -2090,6 +2102,7 @@ function operaMatchesFilters(opera) {
       ...opera.subgenres, ...opera.microgenres, ...opera.modifiers,
       ...opera.editions.map(e => e.alternateTitle || ''),
       ...allInstances.map(i => i.isbn || ''), ...allInstances.map(i => i.location || ''),
+      ...allInstances.map(i => i.collanaEditoriale || ''),
     ].join(' ').toLowerCase();
     if (!haystack.includes(q)) return false;
   }
