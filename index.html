@@ -124,41 +124,82 @@
         <div class="flex flex-wrap items-center gap-2 mb-3">
           <input id="catalog-search-inline" type="text" placeholder="Cerca per titolo, autore, descrizione, serie, ISBN, collana o tag..." oninput="setSearchFilter(this.value)" class="catalog-search-input ui-input flex-1 min-w-[12rem] p-2.5 rounded-xl border text-sm">
           <select id="catalog-sort-select" onchange="setSortOrder(this.value)" class="catalog-sort-select ui-input p-2.5 rounded-xl border text-xs">
+            <option value="updated-desc" selected>Ultimo aggiornamento</option>
+            <option value="created-desc">Ultimo inserimento</option>
             <option value="title-asc">Titolo (A-Z)</option>
             <option value="author-asc">Autore (A-Z)</option>
             <option value="series-asc">Serie & N° volume</option>
+            <option value="collana-asc">Collana & N° volume</option>
             <option value="rating-desc">Valutazione (decrescente)</option>
           </select>
         </div>
         <p id="catalogo-count" class="ui-muted text-xs mb-2"></p>
+        <button onclick="applyModifierToFilteredResults()" class="ui-btn-sec px-3 py-1.5 rounded-lg text-[11px] font-semibold mb-3">🏷️ Applica Modificatore ai risultati filtrati</button>
         <div id="catalogo-list" class="flex flex-col gap-4"></div>
         <div id="catalogo-pagination" class="flex items-center justify-center gap-2 mt-4 mb-16 md:mb-6"></div>
       </section>
 
       <section id="section-tassonomia" class="hidden">
         <h2 class="text-xl font-bold mb-1">Tassonomia</h2>
-        <p class="ui-muted text-sm mb-4">Gestione di Sottogeneri, Micro-generi e Modificatori: conteggio d'uso, rinomina a cascata, fusione duplicati. Seleziona due o più voci nella stessa lista per unirle in un unico tag.</p>
+        <p class="ui-muted text-sm mb-3">Gestione di Sottogeneri, Micro-generi e Modificatori: conteggio d'uso (cliccabile per vederli nel Catalogo), rinomina a cascata, fusione o collegamento come sinonimi, spostamento tra livelli, colore, tag non usati.</p>
+        <input id="taxonomy-search" type="text" placeholder="Cerca un tag..." oninput="onTaxonomySearch(this.value)" class="ui-input w-full p-2.5 rounded-xl border text-sm mb-4">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div class="ui-card border rounded-2xl p-4">
-            <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center justify-between mb-2 gap-1 flex-wrap">
               <p class="font-bold text-sm">Sottogeneri</p>
-              <button onclick="mergeSelectedTags('subgenres')" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">Unisci selezionati</button>
+              <div class="flex gap-1">
+                <button onclick="mergeSelectedTags('subgenres')" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">Unisci</button>
+                <button onclick="linkSelectedTagsAsAliases('subgenres')" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">≈ Sinonimi</button>
+              </div>
+            </div>
+            <div class="flex gap-1 mb-2">
+              <input id="taxonomy-new-subgenres" type="text" placeholder="+ nuovo tag..." class="ui-input flex-1 p-1.5 rounded-lg border text-xs">
+              <button onclick="addNewTagToRegistry('subgenres')" class="ui-btn-sec px-2 rounded-lg text-xs font-semibold">+</button>
             </div>
             <div id="taxonomy-subgenres" class="flex flex-col gap-1.5"></div>
+            <div class="flex items-center justify-between mt-3 mb-1">
+              <p class="ui-muted text-[10px] font-bold uppercase tracking-wider">Non usati</p>
+              <button onclick="deleteAllUnusedTags('subgenres')" class="text-red-500 text-[10px] font-semibold">Elimina tutti</button>
+            </div>
+            <div id="taxonomy-unused-subgenres" class="flex flex-col gap-1.5"></div>
           </div>
           <div class="ui-card border rounded-2xl p-4">
-            <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center justify-between mb-2 gap-1 flex-wrap">
               <p class="font-bold text-sm">Micro-generi</p>
-              <button onclick="mergeSelectedTags('microgenres')" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">Unisci selezionati</button>
+              <div class="flex gap-1">
+                <button onclick="mergeSelectedTags('microgenres')" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">Unisci</button>
+                <button onclick="linkSelectedTagsAsAliases('microgenres')" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">≈ Sinonimi</button>
+              </div>
+            </div>
+            <div class="flex gap-1 mb-2">
+              <input id="taxonomy-new-microgenres" type="text" placeholder="+ nuovo tag..." class="ui-input flex-1 p-1.5 rounded-lg border text-xs">
+              <button onclick="addNewTagToRegistry('microgenres')" class="ui-btn-sec px-2 rounded-lg text-xs font-semibold">+</button>
             </div>
             <div id="taxonomy-microgenres" class="flex flex-col gap-1.5"></div>
+            <div class="flex items-center justify-between mt-3 mb-1">
+              <p class="ui-muted text-[10px] font-bold uppercase tracking-wider">Non usati</p>
+              <button onclick="deleteAllUnusedTags('microgenres')" class="text-red-500 text-[10px] font-semibold">Elimina tutti</button>
+            </div>
+            <div id="taxonomy-unused-microgenres" class="flex flex-col gap-1.5"></div>
           </div>
           <div class="ui-card border rounded-2xl p-4">
-            <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center justify-between mb-2 gap-1 flex-wrap">
               <p class="font-bold text-sm">Modificatori</p>
-              <button onclick="mergeSelectedTags('modifiers')" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">Unisci selezionati</button>
+              <div class="flex gap-1">
+                <button onclick="mergeSelectedTags('modifiers')" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">Unisci</button>
+                <button onclick="linkSelectedTagsAsAliases('modifiers')" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">≈ Sinonimi</button>
+              </div>
+            </div>
+            <div class="flex gap-1 mb-2">
+              <input id="taxonomy-new-modifiers" type="text" placeholder="+ nuovo tag..." class="ui-input flex-1 p-1.5 rounded-lg border text-xs">
+              <button onclick="addNewTagToRegistry('modifiers')" class="ui-btn-sec px-2 rounded-lg text-xs font-semibold">+</button>
             </div>
             <div id="taxonomy-modifiers" class="flex flex-col gap-1.5"></div>
+            <div class="flex items-center justify-between mt-3 mb-1">
+              <p class="ui-muted text-[10px] font-bold uppercase tracking-wider">Non usati</p>
+              <button onclick="deleteAllUnusedTags('modifiers')" class="text-red-500 text-[10px] font-semibold">Elimina tutti</button>
+            </div>
+            <div id="taxonomy-unused-modifiers" class="flex flex-col gap-1.5"></div>
           </div>
         </div>
       </section>
@@ -528,7 +569,7 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.14';
+const APP_VERSION = '1.18';
 
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 2; // bump da 1 a 2: aggiunge lo store "settings" anche a chi ha già aperto il Punto 1
@@ -634,7 +675,23 @@ async function getAllTags(level) {
   return [...set].sort((a, b) => a.localeCompare(b, 'it'));
 }
 
-// --- GESTIONE TASSONOMIA (rinomina/eliminazione/fusione a cascata su tutte le Opere) --------
+async function getAllOperaSeriesValues() {
+  const opere = await dbGetAll();
+  const set = new Set();
+  opere.forEach(o => { if (o.series) set.add(o.series); });
+  return [...set].sort((a, b) => a.localeCompare(b, 'it'));
+}
+async function getAllInstanceCollanaValues() {
+  const opere = await dbGetAll();
+  const set = new Set();
+  opere.forEach(o => o.editions.forEach(e => e.instances.forEach(i => { if (i.collanaEditoriale) set.add(i.collanaEditoriale); })));
+  return [...set].sort((a, b) => a.localeCompare(b, 'it'));
+}
+
+// --- GESTIONE TASSONOMIA (rinomina/eliminazione/fusione/alias/colori/spostamento tra livelli) --
+
+const TAXONOMY_LEVELS = ['subgenres', 'microgenres', 'modifiers'];
+const TAXONOMY_LEVEL_LABELS = { subgenres: 'Sottogenere', microgenres: 'Micro-genere', modifiers: 'Modificatore' };
 
 async function getTagUsageCounts(level) {
   const opere = await dbGetAll();
@@ -643,6 +700,88 @@ async function getTagUsageCounts(level) {
   return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => a.tag.localeCompare(b.tag, 'it'));
 }
 
+// --- Registro dei tag: un elenco persistito indipendente dall'uso effettivo. Ogni tag usato su
+// un'Opera vi finisce automaticamente; un tag può anche essere pre-creato da qui senza ancora
+// comparire su nessuna Opera ("tag non usati").
+async function registerTagsInRegistry(level, tags) {
+  if (!tags || !tags.length) return;
+  const key = 'tagRegistry_' + level;
+  const current = await getSetting(key, []);
+  const set = new Set(current);
+  let changed = false;
+  tags.forEach(t => { if (t && !set.has(t)) { set.add(t); changed = true; } });
+  if (changed) await setSetting(key, [...set].sort((a, b) => a.localeCompare(b, 'it')));
+}
+async function getUnusedTags(level) {
+  const registry = await getSetting('tagRegistry_' + level, []);
+  const used = new Set((await getTagUsageCounts(level)).map(r => r.tag));
+  return registry.filter(t => !used.has(t)).sort((a, b) => a.localeCompare(b, 'it'));
+}
+
+// --- Alias/sinonimi "morbidi": tag dichiarati equivalenti ai fini del filtro, senza fondere i
+// dati sottostanti — restano visibili separatamente in Tassonomia e sulle Opere.
+async function getTagAliasGroups(level) { return await getSetting('tagAliases_' + level, []); }
+async function getTagAliasGroup(level, tag) {
+  const groups = await getTagAliasGroups(level);
+  return groups.find(g => g.includes(tag)) || [tag];
+}
+async function linkTagsAsAliases(level, tags) {
+  if (tags.length < 2) return;
+  let groups = await getTagAliasGroups(level);
+  const merged = new Set(tags);
+  groups = groups.filter(g => {
+    if (g.some(t => merged.has(t))) { g.forEach(t => merged.add(t)); return false; }
+    return true;
+  });
+  groups.push([...merged]);
+  await setSetting('tagAliases_' + level, groups);
+  await refreshTagAliasCache();
+}
+async function unlinkTagFromAliasGroup(level, tag) {
+  let groups = await getTagAliasGroups(level);
+  groups = groups.map(g => g.filter(t => t !== tag)).filter(g => g.length > 1);
+  await setSetting('tagAliases_' + level, groups);
+  await refreshTagAliasCache();
+}
+async function renameTagInAliasGroups(level, oldTag, newTag) {
+  let groups = await getTagAliasGroups(level);
+  groups = groups.map(g => g.map(t => t === oldTag ? newTag : t));
+  await setSetting('tagAliases_' + level, groups);
+  await refreshTagAliasCache();
+}
+// Cache sincrona in memoria dei gruppi di alias, per poterli consultare durante il filtraggio del
+// Catalogo (che è sincrono) senza dover leggere da IndexedDB tag per tag ad ogni render.
+let tagAliasCache = { subgenres: [], microgenres: [], modifiers: [] };
+async function refreshTagAliasCache() {
+  tagAliasCache.subgenres = await getTagAliasGroups('subgenres');
+  tagAliasCache.microgenres = await getTagAliasGroups('microgenres');
+  tagAliasCache.modifiers = await getTagAliasGroups('modifiers');
+}
+function getTagAliasGroupSync(level, tag) {
+  const groups = tagAliasCache[level] || [];
+  return groups.find(g => g.includes(tag)) || [tag];
+}
+
+// --- Colore per tag (badge nel Catalogo) ---------------------------------------------------
+async function getTagColors(level) { return await getSetting('tagColors_' + level, {}); }
+async function setTagColor(level, tag, color) {
+  const colors = await getTagColors(level);
+  if (color) colors[tag] = color; else delete colors[tag];
+  await setSetting('tagColors_' + level, colors);
+  await refreshTagColorCache();
+}
+async function renameTagColorKey(level, oldTag, newTag) {
+  const colors = await getTagColors(level);
+  if (colors[oldTag] !== undefined) { colors[newTag] = colors[oldTag]; delete colors[oldTag]; await setSetting('tagColors_' + level, colors); }
+}
+let tagColorCache = { subgenres: {}, microgenres: {}, modifiers: {} };
+async function refreshTagColorCache() {
+  tagColorCache.subgenres = await getTagColors('subgenres');
+  tagColorCache.microgenres = await getTagColors('microgenres');
+  tagColorCache.modifiers = await getTagColors('modifiers');
+}
+function getTagColorSync(level, tag) { return (tagColorCache[level] || {})[tag] || null; }
+
 async function renameTagEverywhere(level, oldTag, newTagRaw) {
   const newTag = normalizeTag(newTagRaw);
   if (!newTag || newTag === oldTag) return;
@@ -650,8 +789,15 @@ async function renameTagEverywhere(level, oldTag, newTagRaw) {
   for (const opera of opere) {
     if (!(opera[level] || []).includes(oldTag)) continue;
     opera[level] = addNormalizedTag(opera[level].filter(t => t !== oldTag), newTag);
+    opera.updatedAt = getLocalDateString();
     await dbSave(opera);
   }
+  const key = 'tagRegistry_' + level;
+  const registry = (await getSetting(key, [])).filter(t => t !== oldTag);
+  if (!registry.includes(newTag)) registry.push(newTag);
+  await setSetting(key, registry.sort((a, b) => a.localeCompare(b, 'it')));
+  await renameTagInAliasGroups(level, oldTag, newTag);
+  await renameTagColorKey(level, oldTag, newTag);
 }
 
 async function deleteTagEverywhere(level, tag) {
@@ -659,8 +805,13 @@ async function deleteTagEverywhere(level, tag) {
   for (const opera of opere) {
     if (!(opera[level] || []).includes(tag)) continue;
     opera[level] = opera[level].filter(t => t !== tag);
+    opera.updatedAt = getLocalDateString();
     await dbSave(opera);
   }
+  const key = 'tagRegistry_' + level;
+  await setSetting(key, (await getSetting(key, [])).filter(t => t !== tag));
+  await unlinkTagFromAliasGroup(level, tag);
+  await setTagColor(level, tag, null);
 }
 
 async function mergeTagsEverywhere(level, tagsToMerge, canonicalNameRaw) {
@@ -670,30 +821,74 @@ async function mergeTagsEverywhere(level, tagsToMerge, canonicalNameRaw) {
   for (const opera of opere) {
     if (!(opera[level] || []).some(t => tagsToMerge.includes(t))) continue;
     opera[level] = addNormalizedTag(opera[level].filter(t => !tagsToMerge.includes(t)), canonical);
+    opera.updatedAt = getLocalDateString();
     await dbSave(opera);
   }
+  const key = 'tagRegistry_' + level;
+  const registry = (await getSetting(key, [])).filter(t => !tagsToMerge.includes(t));
+  if (!registry.includes(canonical)) registry.push(canonical);
+  await setSetting(key, registry.sort((a, b) => a.localeCompare(b, 'it')));
+  // I tag confluiti nella fusione diventano letteralmente lo stesso tag: non ha più senso che
+  // restino in un gruppo di alias o abbiano un colore separato dal nome canonico.
+  for (const t of tagsToMerge) { if (t !== canonical) { await unlinkTagFromAliasGroup(level, t); await setTagColor(level, t, null); } }
+}
+
+// Sposta un tag da un livello di tassonomia a un altro su tutte le Opere che lo usano
+// (es. un Micro-genere che in realtà meriterebbe di essere un Sottogenere).
+async function moveTagToLevel(fromLevel, toLevel, tag) {
+  if (fromLevel === toLevel) return;
+  const opere = await dbGetAll();
+  for (const opera of opere) {
+    if (!(opera[fromLevel] || []).includes(tag)) continue;
+    opera[fromLevel] = opera[fromLevel].filter(t => t !== tag);
+    opera[toLevel] = addNormalizedTag(opera[toLevel] || [], tag);
+    opera.updatedAt = getLocalDateString();
+    await dbSave(opera);
+  }
+  const fromKey = 'tagRegistry_' + fromLevel;
+  await setSetting(fromKey, (await getSetting(fromKey, [])).filter(t => t !== tag));
+  await registerTagsInRegistry(toLevel, [tag]);
+  const fromColors = await getTagColors(fromLevel);
+  if (fromColors[tag] !== undefined) {
+    const color = fromColors[tag];
+    delete fromColors[tag]; await setSetting('tagColors_' + fromLevel, fromColors);
+    const toColors = await getTagColors(toLevel); toColors[tag] = color; await setSetting('tagColors_' + toLevel, toColors);
+  }
+  // Gli alias sono specifici del livello: spostando il tag, le sue equivalenze nel vecchio
+  // livello non hanno più senso (semplificazione ragionevole, da ricreare nel nuovo livello se serve).
+  await unlinkTagFromAliasGroup(fromLevel, tag);
+  await refreshTagColorCache();
 }
 
 // --- OPERA (L1) ---------------------------------------------------------------------------
 function newOperaSkeleton({ title, authors = [], description = '', series = null, seriesIndex = null, macro, subgenres = [], microgenres = [], modifiers = [] }) {
+  const now = getLocalDateString();
   return { id: uid('op'), title, authors: parseAuthorsList(authors), description, series, seriesIndex, macro,
     subgenres: normalizeTagList(subgenres), microgenres: normalizeTagList(microgenres), modifiers: normalizeTagList(modifiers),
-    createdAt: getLocalDateString(), editions: [] };
+    createdAt: now, updatedAt: now, editions: [] };
 }
-async function createOpera(data) { const opera = newOperaSkeleton(data); await dbSave(opera); return opera; }
+async function createOpera(data) {
+  const opera = newOperaSkeleton(data);
+  await dbSave(opera);
+  await Promise.all(TAXONOMY_LEVELS.map(level => registerTagsInRegistry(level, opera[level])));
+  return opera;
+}
 async function updateOpera(operaId, patch) {
   const opera = await dbGet(operaId);
   if (!opera) throw new Error('Opera non trovata: ' + operaId);
   ['subgenres', 'microgenres', 'modifiers'].forEach(key => { if (patch[key]) patch[key] = normalizeTagList(patch[key]); });
   if (patch.authors) patch.authors = parseAuthorsList(patch.authors);
-  const updated = { ...opera, ...patch, id: opera.id, editions: opera.editions };
-  await dbSave(updated); return updated;
+  const updated = { ...opera, ...patch, id: opera.id, editions: opera.editions, updatedAt: getLocalDateString() };
+  await dbSave(updated);
+  await Promise.all(TAXONOMY_LEVELS.map(level => registerTagsInRegistry(level, updated[level])));
+  return updated;
 }
 async function deleteOpera(operaId) { return dbDelete(operaId); }
 
 // --- EDIZIONE (L2) --------------------------------------------------------------------------
 function newEditionSkeleton({ publisher = '', year = null, language = 'Italiano', description = '', alternateTitle = '' }) {
-  return { id: uid('ed'), publisher, year, language, description, alternateTitle, createdAt: getLocalDateString(), instances: [] };
+  const now = getLocalDateString();
+  return { id: uid('ed'), publisher, year, language, description, alternateTitle, createdAt: now, updatedAt: now, instances: [] };
 }
 async function addEdition(operaId, data) {
   const opera = await dbGet(operaId);
@@ -705,7 +900,7 @@ async function updateEdition(operaId, editionId, patch) {
   const opera = await dbGet(operaId);
   const edition = opera?.editions.find(e => e.id === editionId);
   if (!edition) throw new Error('Edizione non trovata: ' + editionId);
-  Object.assign(edition, patch); await dbSave(opera); return edition;
+  Object.assign(edition, patch, { updatedAt: getLocalDateString() }); await dbSave(opera); return edition;
 }
 async function deleteEdition(operaId, editionId) {
   const opera = await dbGet(operaId);
@@ -723,6 +918,7 @@ async function moveEditionToOpera(fromOperaId, editionId, toOperaId) {
   const idx = fromOpera.editions.findIndex(e => e.id === editionId);
   if (idx === -1) throw new Error('Edizione non trovata nell\'Opera di origine: ' + editionId);
   const [edition] = fromOpera.editions.splice(idx, 1);
+  edition.updatedAt = getLocalDateString();
   toOpera.editions.push(edition);
   await dbSave(fromOpera);
   await dbSave(toOpera);
@@ -735,8 +931,9 @@ function findInstance(opera, editionId, instanceId) {
   return edition?.instances.find(i => i.id === instanceId);
 }
 function newInstanceSkeleton({ ownership = 'owned', format = 'E-book', isbn = '', rating = 0, location = '', description = '', coverBase64 = '', totalPages = null, totalMinutes = null, collanaEditoriale = '', numeroCollana = null }) {
+  const now = getLocalDateString();
   return { id: uid('inst'), ownership, format, isbn, rating, location, description, coverBase64,
-    totalPages, totalMinutes, collanaEditoriale, numeroCollana, createdAt: getLocalDateString(), sessions: [] };
+    totalPages, totalMinutes, collanaEditoriale, numeroCollana, createdAt: now, updatedAt: now, sessions: [] };
 }
 async function addInstance(operaId, editionId, data) {
   const opera = await dbGet(operaId);
@@ -749,7 +946,7 @@ async function updateInstance(operaId, editionId, instanceId, patch) {
   const opera = await dbGet(operaId);
   const instance = findInstance(opera, editionId, instanceId);
   if (!instance) throw new Error('Istanza non trovata: ' + instanceId);
-  Object.assign(instance, patch); await dbSave(opera); return instance;
+  Object.assign(instance, patch, { updatedAt: getLocalDateString() }); await dbSave(opera); return instance;
 }
 async function deleteInstance(operaId, editionId, instanceId) {
   const opera = await dbGet(operaId);
@@ -788,20 +985,20 @@ async function addSession(operaId, editionId, instanceId) {
   const instance = findInstance(opera, editionId, instanceId);
   if (!instance) throw new Error('Istanza non trovata: ' + instanceId);
   const session = newSessionSkeleton();
-  instance.sessions.push(session); await dbSave(opera); return session;
+  instance.sessions.push(session); instance.updatedAt = getLocalDateString(); await dbSave(opera); return session;
 }
 async function deleteSession(operaId, editionId, instanceId, sessionId) {
   const opera = await dbGet(operaId);
   const instance = findInstance(opera, editionId, instanceId);
   if (!instance) throw new Error('Istanza non trovata: ' + instanceId);
-  instance.sessions = instance.sessions.filter(s => s.id !== sessionId); await dbSave(opera);
+  instance.sessions = instance.sessions.filter(s => s.id !== sessionId); instance.updatedAt = getLocalDateString(); await dbSave(opera);
 }
 async function updateSessionStatus(operaId, editionId, instanceId, sessionId, status) {
   const opera = await dbGet(operaId);
   const instance = findInstance(opera, editionId, instanceId);
   const session = instance.sessions.find(s => s.id === sessionId);
   if (!session) throw new Error('Sessione non trovata: ' + sessionId);
-  session.status = status; await dbSave(opera); return session;
+  session.status = status; instance.updatedAt = getLocalDateString(); await dbSave(opera); return session;
 }
 async function updateSessionDates(operaId, editionId, instanceId, sessionId, { startDate, endDate }) {
   const opera = await dbGet(operaId);
@@ -810,7 +1007,7 @@ async function updateSessionDates(operaId, editionId, instanceId, sessionId, { s
   if (!session) throw new Error('Sessione non trovata: ' + sessionId);
   if (startDate !== undefined) session.startDate = startDate || null;
   if (endDate !== undefined) session.endDate = endDate || null;
-  await dbSave(opera); return session;
+  instance.updatedAt = getLocalDateString(); await dbSave(opera); return session;
 }
 
 // Stato/date di una Sessione calcolati dal progresso raggiunto: mai "Da Leggere" (una sessione
@@ -855,7 +1052,7 @@ async function setSessionProgressAbsolute(operaId, editionId, instanceId, sessio
   if (!session) throw new Error('Sessione non trovata: ' + sessionId);
   const totalUnit = getInstanceTotalUnit(instance);
   applyProgressToSession(session, totalUnit, Math.max(0, Math.round(reachedUnit)));
-  await dbSave(opera); return session;
+  instance.updatedAt = getLocalDateString(); await dbSave(opera); return session;
 }
 async function updateLogEntryDate(operaId, editionId, instanceId, sessionId, oldDate, newDate) {
   const opera = await dbGet(operaId);
@@ -873,6 +1070,7 @@ async function updateLogEntryDate(operaId, editionId, instanceId, sessionId, old
     entry.date = newDate;
   }
   session.readingLog.sort((a, b) => a.date.localeCompare(b.date));
+  instance.updatedAt = getLocalDateString();
   await dbSave(opera); return session;
 }
 
@@ -1104,6 +1302,7 @@ async function commitOmnishelfMigration(omnishelfData, plan) {
     opera.editions = [...editionsByKey.values()];
 
     await dbSave(opera);
+    await Promise.all(TAXONOMY_LEVELS.map(level => registerTagsInRegistry(level, opera[level])));
     created++;
   }
   return created;
@@ -1166,10 +1365,13 @@ function getOrderedSections() {
 const STATUS_OPTIONS = ['Da Leggere', 'In Lettura', 'Completato', 'Sospeso', 'Abbandonato'];
 const MACRO_OPTIONS = ['Narrativa', 'Saggistica', 'Poesia & Teatro', 'Fumetti & Illustrati'];
 const EMPTY_TAG = '__NESSUNO__'; // valore sentinella per filtrare Opere senza tag in un dato livello
+const ANY_TAG = '__QUALSIASI__'; // valore sentinella per filtrare Opere/Istanze CON un valore (qualsiasi) in un dato campo
 
-let catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [] };
-let catalogSort = 'title-asc';
+let catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [], recentDays: null, series: [], collana: [], rating: [] };
+let catalogSort = 'updated-desc';
 let catalogPageSize = 25; // 10 | 25 | 50 | 'all'
+let seriesFilterOpen = false;
+let collanaFilterOpen = false;
 let catalogPage = 1;
 
 async function toggleFilterValue(key, value) {
@@ -1197,6 +1399,12 @@ async function setPageSize(value) {
   document.querySelectorAll('.catalog-pagesize-select').forEach(el => el.value = value);
   await renderCatalogo();
 }
+async function setRecentDaysFilter(value) {
+  catalogFilters.recentDays = value ? Number(value) : null;
+  catalogPage = 1;
+  document.querySelectorAll('.catalog-recentdays-input').forEach(el => { if (el.value !== value) el.value = value; });
+  await renderCatalogo();
+}
 async function goToPage(page) {
   catalogPage = page;
   await renderCatalogo();
@@ -1204,9 +1412,10 @@ async function goToPage(page) {
   if (list && typeof list.scrollIntoView === 'function') list.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 async function resetCatalogFilters() {
-  catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [] };
+  catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [], recentDays: null, series: [], collana: [], rating: [] };
   catalogPage = 1;
   document.querySelectorAll('.catalog-search-input').forEach(el => el.value = '');
+  document.querySelectorAll('.catalog-recentdays-input').forEach(el => el.value = '');
   await renderFiltersPanels();
   await renderCatalogo();
 }
@@ -1217,8 +1426,9 @@ function pillButton(label, active, onclick) {
 }
 
 async function renderFiltersPanel(suffix) {
-  const [subgenres, microgenres, modifiers] = await Promise.all([
+  const [subgenres, microgenres, modifiers, seriesValues, collanaValues] = await Promise.all([
     getAllTags('subgenres'), getAllTags('microgenres'), getAllTags('modifiers'),
+    getAllOperaSeriesValues(), getAllInstanceCollanaValues(),
   ]);
   return `
     <p class="text-[10px] font-bold uppercase tracking-wider ui-accent-text mb-2">Filtri</p>
@@ -1265,6 +1475,37 @@ async function renderFiltersPanel(suffix) {
     <div class="flex flex-wrap gap-1 mb-3">
       ${pillButton('Posseduto', catalogFilters.ownership.includes('owned'), `toggleFilterValue('ownership','owned')`)}
       ${pillButton('Wishlist', catalogFilters.ownership.includes('wishlist'), `toggleFilterValue('ownership','wishlist')`)}
+    </div>
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Valutazione</p>
+    <div class="flex flex-wrap gap-1 mb-3">
+      ${pillButton('— Nessuna —', catalogFilters.rating.includes(EMPTY_TAG), `toggleFilterValue('rating','${EMPTY_TAG}')`)}
+      ${pillButton('— Tutte —', catalogFilters.rating.includes(ANY_TAG), `toggleFilterValue('rating','${ANY_TAG}')`)}
+      ${[1, 2, 3, 4, 5].map(n => pillButton('★'.repeat(n), catalogFilters.rating.includes(String(n)), `toggleFilterValue('rating','${n}')`)).join('')}
+    </div>
+
+    <details class="mb-3" ${seriesFilterOpen ? 'open' : ''} ontoggle="seriesFilterOpen = this.open">
+      <summary class="ui-muted text-[10px] font-semibold cursor-pointer select-none">Serie</summary>
+      <div class="flex flex-wrap gap-1 mt-1.5">
+        ${pillButton('— Nessuna —', catalogFilters.series.includes(EMPTY_TAG), `toggleFilterValue('series','${EMPTY_TAG}')`)}
+        ${pillButton('— Tutte —', catalogFilters.series.includes(ANY_TAG), `toggleFilterValue('series','${ANY_TAG}')`)}
+        ${seriesValues.map(v => pillButton(v, catalogFilters.series.includes(v), `toggleFilterValue('series','${v}')`)).join('')}
+      </div>
+    </details>
+
+    <details class="mb-3" ${collanaFilterOpen ? 'open' : ''} ontoggle="collanaFilterOpen = this.open">
+      <summary class="ui-muted text-[10px] font-semibold cursor-pointer select-none">Collana Editoriale</summary>
+      <div class="flex flex-wrap gap-1 mt-1.5">
+        ${pillButton('— Nessuna —', catalogFilters.collana.includes(EMPTY_TAG), `toggleFilterValue('collana','${EMPTY_TAG}')`)}
+        ${pillButton('— Tutte —', catalogFilters.collana.includes(ANY_TAG), `toggleFilterValue('collana','${ANY_TAG}')`)}
+        ${collanaValues.map(v => pillButton(v, catalogFilters.collana.includes(v), `toggleFilterValue('collana','${v}')`)).join('')}
+      </div>
+    </details>
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Ultima attività (aggiunta o modifica)</p>
+    <div class="flex items-center gap-2 mb-3">
+      <input type="number" min="1" placeholder="es. 30" value="${catalogFilters.recentDays || ''}" oninput="setRecentDaysFilter(this.value)" class="catalog-recentdays-input ui-input w-20 p-2 rounded-lg border text-xs">
+      <span class="ui-muted text-[11px]">ultimi giorni</span>
     </div>
 
     <p class="ui-muted text-[10px] font-semibold mb-1">Pagina catalogo</p>
@@ -1460,6 +1701,8 @@ async function initApp() {
     coverMaxSize = await getSetting('coverMaxSize', 200);
     document.getElementById('webdav-url').value = await getSetting('webdavUrl', '');
     document.getElementById('webdav-username').value = await getSetting('webdavUsername', '');
+    await refreshTagAliasCache();
+    await refreshTagColorCache();
 
     renderNav('nav-desktop-slot', { vertical: true });
     renderNav('nav-mobile-slot', { vertical: false });
@@ -1712,6 +1955,7 @@ async function openInstanceModal(operaId, editionId, instanceId = null) {
     document.getElementById('instance-total-minutes').value = instance.totalMinutes ?? '';
     document.getElementById('instance-description').value = instance.description || '';
     setCoverPreview(instance.coverBase64 || '');
+    document.getElementById('instance-rating-value').value = instance.rating || 0;
     renderStarPicker(instance.rating || 0);
     await renderInstanceSessions();
   } else {
@@ -1726,6 +1970,7 @@ async function openInstanceModal(operaId, editionId, instanceId = null) {
     document.getElementById('instance-total-minutes').value = '';
     document.getElementById('instance-description').value = '';
     setCoverPreview('');
+    document.getElementById('instance-rating-value').value = 0;
     renderStarPicker(0);
   }
   document.getElementById('instance-cover-url').value = '';
@@ -2054,6 +2299,14 @@ function iconAddInstanceButton(operaId, editionId) {
     </button>`;
 }
 
+// Badge di un tag nel Catalogo, con il colore personalizzato impostato in Tassonomia (se presente).
+function renderTagBadge(level, tag) {
+  const color = getTagColorSync(level, tag);
+  const style = color ? ` style="background-color:${color}22; color:${color}; border:1px solid ${color}55;"` : '';
+  const cls = color ? 'text-[9px] px-1.5 py-0.5 rounded' : 'text-[9px] px-1.5 py-0.5 rounded bg-gray-500/10';
+  return `<span class="${cls}"${style}>${tag}</span>`;
+}
+
 function statusBadgeClass(status) {
   return {
     'Da Leggere': 'bg-gray-500/15',
@@ -2107,25 +2360,50 @@ function operaMatchesFilters(opera) {
     if (!haystack.includes(q)) return false;
   }
   if (f.macro.length && !f.macro.includes(opera.macro)) return false;
-  if (f.subgenres.length && !matchesTagFilter(f.subgenres, opera.subgenres)) return false;
-  if (f.microgenres.length && !matchesTagFilter(f.microgenres, opera.microgenres)) return false;
-  if (f.modifiers.length && !matchesTagFilter(f.modifiers, opera.modifiers)) return false;
+  if (f.subgenres.length && !matchesTagFilter(f.subgenres, opera.subgenres, 'subgenres')) return false;
+  if (f.microgenres.length && !matchesTagFilter(f.microgenres, opera.microgenres, 'microgenres')) return false;
+  if (f.modifiers.length && !matchesTagFilter(f.modifiers, opera.modifiers, 'modifiers')) return false;
+  if (f.series.length) {
+    const s = opera.series || '';
+    const match = f.series.some(v => v === EMPTY_TAG ? !s : v === ANY_TAG ? !!s : s === v);
+    if (!match) return false;
+  }
+  if (f.recentDays) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - f.recentDays);
+    if (getOperaTimestamps(opera).lastUpdated < getLocalDateString(cutoff)) return false;
+  }
   return true;
 }
-// Un'Opera soddisfa il filtro se ha almeno uno dei tag selezionati, oppure se è stato
-// selezionato "— Nessuno —" ed è priva di tag a quel livello.
-function matchesTagFilter(selectedValues, operaTags) {
-  return selectedValues.some(v => v === EMPTY_TAG ? operaTags.length === 0 : operaTags.includes(v));
+// Un'Opera soddisfa il filtro se ha almeno uno dei tag selezionati (o un suo alias/sinonimo),
+// oppure se è stato selezionato "— Nessuno —" ed è priva di tag a quel livello.
+function matchesTagFilter(selectedValues, operaTags, level) {
+  return selectedValues.some(v => {
+    if (v === EMPTY_TAG) return operaTags.length === 0;
+    const group = getTagAliasGroupSync(level, v);
+    return group.some(t => operaTags.includes(t));
+  });
 }
 function instanceMatchesFilters(instance) {
   const f = catalogFilters;
   if (f.status.length && !f.status.includes(getInstanceDisplayStatus(instance))) return false;
   if (f.ownership.length && !f.ownership.includes(instance.ownership)) return false;
   if (f.format.length && !f.format.includes(instance.format)) return false;
+  if (f.collana.length) {
+    const c = instance.collanaEditoriale || '';
+    const match = f.collana.some(v => v === EMPTY_TAG ? !c : v === ANY_TAG ? !!c : c === v);
+    if (!match) return false;
+  }
+  if (f.rating.length) {
+    const r = instance.rating || 0;
+    const match = f.rating.some(v => v === EMPTY_TAG ? r === 0 : v === ANY_TAG ? r > 0 : Number(v) === r);
+    if (!match) return false;
+  }
   return true;
 }
 function operaHasMatchingInstance(opera) {
-  if (!catalogFilters.status.length && !catalogFilters.ownership.length && !catalogFilters.format.length) return true;
+  const f = catalogFilters;
+  if (!f.status.length && !f.ownership.length && !f.format.length && !f.collana.length && !f.rating.length) return true;
   const allInstances = opera.editions.flatMap(e => e.instances);
   if (allInstances.length === 0) return true; // nessuna istanza: i filtri di istanza non hanno nulla da escludere
   return allInstances.some(i => instanceMatchesFilters(i));
@@ -2135,6 +2413,32 @@ function operaMaxRating(opera) {
   opera.editions.forEach(e => e.instances.forEach(i => { if ((i.rating || 0) > max) max = i.rating; }));
   return max;
 }
+// Prima Istanza (in ordine di comparsa) con una Collana Editoriale valorizzata, usata per
+// l'ordinamento "Collana & N° volume" — un'Opera può averne diverse solo in casi rari.
+function operaCollanaInfo(opera) {
+  for (const edition of opera.editions) {
+    for (const instance of edition.instances) {
+      if (instance.collanaEditoriale) return { collana: instance.collanaEditoriale, numero: instance.numeroCollana || 0 };
+    }
+  }
+  return null;
+}
+// Data di creazione/ultima modifica più recente tra l'Opera stessa e tutte le sue Edizioni/
+// Istanze (le Sessioni non hanno un updatedAt proprio: le loro modifiche aggiornano l'Istanza
+// che le contiene). Usata sia per l'ordinamento sia per il filtro "ultima attività".
+function getOperaTimestamps(opera) {
+  let lastCreated = opera.createdAt || '';
+  let lastUpdated = opera.updatedAt || opera.createdAt || '';
+  opera.editions.forEach(e => {
+    if ((e.createdAt || '') > lastCreated) lastCreated = e.createdAt;
+    if ((e.updatedAt || e.createdAt || '') > lastUpdated) lastUpdated = e.updatedAt || e.createdAt;
+    e.instances.forEach(i => {
+      if ((i.createdAt || '') > lastCreated) lastCreated = i.createdAt;
+      if ((i.updatedAt || i.createdAt || '') > lastUpdated) lastUpdated = i.updatedAt || i.createdAt;
+    });
+  });
+  return { lastCreated, lastUpdated };
+}
 function sortOpere(list) {
   const arr = [...list];
   if (catalogSort === 'author-asc') arr.sort((a, b) => (getOperaAuthors(a)[0] || '').localeCompare(getOperaAuthors(b)[0] || '', 'it'));
@@ -2142,7 +2446,14 @@ function sortOpere(list) {
     const c = (a.series || '').localeCompare(b.series || '', 'it');
     return c !== 0 ? c : (a.seriesIndex || 0) - (b.seriesIndex || 0);
   });
+  else if (catalogSort === 'collana-asc') arr.sort((a, b) => {
+    const ca = operaCollanaInfo(a), cb = operaCollanaInfo(b);
+    const c = ((ca && ca.collana) || '').localeCompare((cb && cb.collana) || '', 'it');
+    return c !== 0 ? c : ((ca && ca.numero) || 0) - ((cb && cb.numero) || 0);
+  });
   else if (catalogSort === 'rating-desc') arr.sort((a, b) => operaMaxRating(b) - operaMaxRating(a));
+  else if (catalogSort === 'updated-desc') arr.sort((a, b) => getOperaTimestamps(b).lastUpdated.localeCompare(getOperaTimestamps(a).lastUpdated));
+  else if (catalogSort === 'created-desc') arr.sort((a, b) => getOperaTimestamps(b).lastCreated.localeCompare(getOperaTimestamps(a).lastCreated));
   else arr.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'it'));
   return arr;
 }
@@ -2157,7 +2468,7 @@ async function renderCatalogo() {
   const totalCount = all.length;
   const matchCount = filtered.length;
   const f = catalogFilters;
-  const hasActiveFilters = f.search || f.macro.length || f.subgenres.length || f.microgenres.length || f.modifiers.length || f.status.length || f.ownership.length || f.format.length;
+  const hasActiveFilters = f.search || f.macro.length || f.subgenres.length || f.microgenres.length || f.modifiers.length || f.status.length || f.ownership.length || f.format.length || f.recentDays || f.series.length || f.collana.length || f.rating.length;
 
   countEl.textContent = hasActiveFilters ? `${matchCount} opera/e trovate su ${totalCount} totali` : `${totalCount} opera/e in catalogo`;
 
@@ -2187,7 +2498,7 @@ async function renderCatalogo() {
   catalogPage = Math.min(Math.max(1, catalogPage), totalPages);
   const startIdx = (catalogPage - 1) * pageSize;
   const pageItems = catalogPageSize === 'all' ? filtered : filtered.slice(startIdx, startIdx + pageSize);
-  const instanceFilterActive = catalogFilters.status.length > 0 || catalogFilters.ownership.length > 0 || catalogFilters.format.length > 0;
+  const instanceFilterActive = catalogFilters.status.length > 0 || catalogFilters.ownership.length > 0 || catalogFilters.format.length > 0 || catalogFilters.collana.length > 0 || catalogFilters.rating.length > 0;
 
   container.innerHTML = pageItems.map(opera => `
     <div class="ui-card border rounded-2xl p-4">
@@ -2198,7 +2509,11 @@ async function renderCatalogo() {
           <p class="text-[10px] font-semibold ui-accent-text uppercase tracking-wide mt-1">${opera.macro}</p>
           ${(opera.subgenres.length || opera.microgenres.length || opera.modifiers.length) ? `
             <div class="flex flex-wrap gap-1 mt-1.5">
-              ${[...opera.subgenres, ...opera.microgenres, ...opera.modifiers].map(t => `<span class="text-[9px] px-1.5 py-0.5 rounded bg-gray-500/10">${t}</span>`).join('')}
+              ${[
+                ...opera.subgenres.map(t => renderTagBadge('subgenres', t)),
+                ...opera.microgenres.map(t => renderTagBadge('microgenres', t)),
+                ...opera.modifiers.map(t => renderTagBadge('modifiers', t)),
+              ].join('')}
             </div>` : ''}
         </div>
         <div class="flex gap-1 shrink-0">
@@ -2225,10 +2540,10 @@ async function renderCatalogo() {
             </div>
             <div class="pl-3 border-l-2 border-gray-500/10 mt-1.5 flex flex-col gap-1.5">
               ${shownInstances.map(inst => `
-                <div class="flex items-center justify-between gap-2 text-xs ${statusBadgeClass(getInstanceDisplayStatus(inst))} rounded-lg px-2 py-1.5">
-                  <span class="flex items-center gap-2 min-w-0">
+                <div class="flex items-start md:items-center justify-between gap-2 text-xs ${statusBadgeClass(getInstanceDisplayStatus(inst))} rounded-lg px-2 py-1.5">
+                  <span class="flex items-start md:items-center gap-2 min-w-0">
                     ${inst.coverBase64 ? `<img src="${inst.coverBase64}" onclick="openCoverViewer(this.src)" class="w-5 h-7 object-cover rounded shrink-0 cursor-zoom-in">` : ''}
-                    <span class="truncate">
+                    <span class="line-clamp-3 md:line-clamp-none md:truncate">
                       ${inst.format === 'Cartaceo' ? '📕' : inst.format === 'Audiobook' ? '🎧' : '📱'} ${inst.format}
                       ${inst.collanaEditoriale ? ` · ${inst.collanaEditoriale}${inst.numeroCollana ? ' #' + inst.numeroCollana : ''}` : ''}
                       · ${getDisplayStatusLabel(getInstanceDisplayStatus(inst), inst.format === 'Audiobook')}${instanceProgressDetail(inst)}${inst.rating ? ' · ' + '★'.repeat(inst.rating) : ''}
@@ -2268,26 +2583,61 @@ function renderPaginationControls(totalPages) {
 
 // --- MODULO TASSONOMIA --------------------------------------------------------------------
 
-function taxonomyRow(level, tag, count) {
+let taxonomySearchQuery = '';
+
+function taxonomyRow(level, tag, count, colorHex, aliasGroup) {
+  const others = (aliasGroup || []).filter(t => t !== tag);
+  const moveOptions = TAXONOMY_LEVELS.filter(l => l !== level)
+    .map(l => `<option value="${l}">→ ${TAXONOMY_LEVEL_LABELS[l]}</option>`).join('');
   return `
-    <div class="flex items-center justify-between gap-2 text-xs ui-input border rounded-lg px-2 py-1.5">
-      <label class="flex items-center gap-2 cursor-pointer overflow-hidden">
-        <input type="checkbox" data-merge="${level}" value="${tag}">
-        <span class="truncate">${tag}</span> <span class="ui-muted shrink-0">(${count})</span>
-      </label>
-      <div class="flex gap-1 shrink-0">
-        <button type="button" onclick="renameTagPrompt('${level}','${tag}')" class="ui-btn-sec w-6 h-6 rounded-md text-[10px]">✎</button>
-        <button type="button" onclick="deleteTagPrompt('${level}','${tag}',${count})" class="text-red-500 text-[10px] font-semibold px-1">🗑</button>
+    <div class="ui-input border rounded-lg px-2 py-1.5 text-xs">
+      <div class="flex items-center justify-between gap-2">
+        <label class="flex items-center gap-2 cursor-pointer overflow-hidden flex-1 min-w-0">
+          <input type="checkbox" data-merge="${level}" value="${tag}" class="shrink-0">
+          <input type="color" value="${colorHex || '#94a3b8'}" onchange="setTagColorFromUI('${level}','${tag}',this.value)" title="Colore del tag" class="w-4 h-4 shrink-0 rounded-full border-0 p-0 cursor-pointer">
+          <span class="truncate">${tag}</span>
+          <button type="button" onclick="viewTagInCatalog('${level}','${tag}')" title="Vedi nel Catalogo" class="ui-accent-text font-semibold shrink-0">(${count})</button>
+        </label>
+        <div class="flex gap-1 shrink-0">
+          <select onchange="moveTagToLevelFromUI('${level}', this.value, '${tag}')" title="Sposta di livello" class="ui-btn-sec rounded-md text-[10px] px-1 py-0.5">
+            <option value="">↔</option>
+            ${moveOptions}
+          </select>
+          <button type="button" onclick="renameTagPrompt('${level}','${tag}')" class="ui-btn-sec w-6 h-6 rounded-md text-[10px]">✎</button>
+          <button type="button" onclick="deleteTagPrompt('${level}','${tag}',${count})" class="text-red-500 text-[10px] font-semibold px-1">🗑</button>
+        </div>
       </div>
+      ${others.length ? `<p class="ui-muted text-[10px] mt-1 pl-6">≈ sinonimo di ${others.join(', ')} — <button type="button" onclick="unlinkTagPrompt('${level}','${tag}')" class="ui-accent-text font-semibold">scollega</button></p>` : ''}
+    </div>`;
+}
+
+function unusedTagRow(level, tag) {
+  return `
+    <div class="flex items-center justify-between gap-2 text-xs ui-input border border-dashed rounded-lg px-2 py-1.5 opacity-70">
+      <span class="truncate">${tag}</span>
+      <button type="button" onclick="deleteUnusedTag('${level}','${tag}')" class="text-red-500 text-[10px] font-semibold px-1">🗑</button>
     </div>`;
 }
 
 async function renderTaxonomyLevel(level, containerId) {
-  const rows = await getTagUsageCounts(level);
+  const [rows, colors] = await Promise.all([getTagUsageCounts(level), getTagColors(level)]);
+  const query = taxonomySearchQuery.toLowerCase();
+  const filtered = query ? rows.filter(r => r.tag.toLowerCase().includes(query)) : rows;
   const el = document.getElementById(containerId);
-  el.innerHTML = rows.length
-    ? rows.map(r => taxonomyRow(level, r.tag, r.count)).join('')
-    : '<p class="ui-muted text-xs">Nessun tag ancora presente in questo livello.</p>';
+  if (!filtered.length) {
+    el.innerHTML = `<p class="ui-muted text-xs">${query ? 'Nessun tag corrisponde alla ricerca.' : 'Nessun tag ancora presente in questo livello.'}</p>`;
+    return;
+  }
+  const withGroups = await Promise.all(filtered.map(async r => ({ ...r, group: await getTagAliasGroup(level, r.tag) })));
+  el.innerHTML = withGroups.map(r => taxonomyRow(level, r.tag, r.count, colors[r.tag], r.group)).join('');
+}
+
+async function renderUnusedTagsLevel(level, containerId) {
+  let unused = await getUnusedTags(level);
+  const query = taxonomySearchQuery.toLowerCase();
+  if (query) unused = unused.filter(t => t.toLowerCase().includes(query));
+  const el = document.getElementById(containerId);
+  el.innerHTML = unused.length ? unused.map(tag => unusedTagRow(level, tag)).join('') : '<p class="ui-muted text-xs">Nessun tag inutilizzato.</p>';
 }
 
 async function renderTassonomia() {
@@ -2295,7 +2645,15 @@ async function renderTassonomia() {
     renderTaxonomyLevel('subgenres', 'taxonomy-subgenres'),
     renderTaxonomyLevel('microgenres', 'taxonomy-microgenres'),
     renderTaxonomyLevel('modifiers', 'taxonomy-modifiers'),
+    renderUnusedTagsLevel('subgenres', 'taxonomy-unused-subgenres'),
+    renderUnusedTagsLevel('microgenres', 'taxonomy-unused-microgenres'),
+    renderUnusedTagsLevel('modifiers', 'taxonomy-unused-modifiers'),
   ]);
+}
+
+async function onTaxonomySearch(value) {
+  taxonomySearchQuery = value;
+  await renderTassonomia();
 }
 
 async function afterTaxonomyChange() {
@@ -2325,6 +2683,87 @@ async function mergeSelectedTags(level) {
   if (canonical === null || !canonical.trim()) return;
   await mergeTagsEverywhere(level, checked, canonical);
   await afterTaxonomyChange();
+}
+
+async function linkSelectedTagsAsAliases(level) {
+  const checked = [...document.querySelectorAll(`input[data-merge="${level}"]:checked`)].map(el => el.value);
+  if (checked.length < 2) { alert('Seleziona almeno due tag da collegare come sinonimi.'); return; }
+  if (!confirm(`Collegare ${checked.join(', ')} come sinonimi? Resteranno tag distinti e visibili separatamente, ma un filtro su uno qualsiasi di essi troverà anche le Opere con gli altri.`)) return;
+  await linkTagsAsAliases(level, checked);
+  await afterTaxonomyChange();
+}
+
+async function unlinkTagPrompt(level, tag) {
+  if (!confirm(`Scollegare "${tag}" dai suoi sinonimi?`)) return;
+  await unlinkTagFromAliasGroup(level, tag);
+  await afterTaxonomyChange();
+}
+
+async function moveTagToLevelFromUI(fromLevel, toLevel, tag) {
+  if (!toLevel) return;
+  if (!confirm(`Spostare "${tag}" da ${TAXONOMY_LEVEL_LABELS[fromLevel]} a ${TAXONOMY_LEVEL_LABELS[toLevel]}?`)) { await renderTassonomia(); return; }
+  await moveTagToLevel(fromLevel, toLevel, tag);
+  await afterTaxonomyChange();
+}
+
+async function setTagColorFromUI(level, tag, color) {
+  await setTagColor(level, tag, color);
+  await refreshTagColorCache();
+  await renderCatalogo();
+}
+
+async function addNewTagToRegistry(level) {
+  const input = document.getElementById('taxonomy-new-' + level);
+  const raw = input.value.trim();
+  if (!raw) return;
+  await registerTagsInRegistry(level, [normalizeTag(raw)]);
+  input.value = '';
+  await renderTassonomia();
+}
+
+async function deleteUnusedTag(level, tag) {
+  const key = 'tagRegistry_' + level;
+  await setSetting(key, (await getSetting(key, [])).filter(t => t !== tag));
+  await renderTassonomia();
+}
+
+async function deleteAllUnusedTags(level) {
+  const unused = await getUnusedTags(level);
+  if (!unused.length) return;
+  if (!confirm(`Eliminare tutti i ${unused.length} tag non usati in ${TAXONOMY_LEVEL_LABELS[level]}?`)) return;
+  await setSetting('tagRegistry_' + level, []);
+  await renderTassonomia();
+}
+
+// Passa al Catalogo mostrando solo le Opere che hanno questo tag (sostituisce, non aggiunge,
+// l'eventuale filtro già impostato per quel livello).
+async function viewTagInCatalog(level, tag) {
+  catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [], recentDays: null, series: [], collana: [], rating: [] };
+  catalogFilters[level] = [tag];
+  catalogPage = 1;
+  switchSection('catalogo');
+  await renderFiltersPanels();
+  await renderCatalogo();
+}
+
+// Applica un Modificatore a tutte le Opere che corrispondono ai filtri/ricerca attuali del
+// Catalogo (a prescindere dalla pagina in cui ci si trova) — utile per taggare in blocco.
+async function applyModifierToFilteredResults() {
+  const all = await dbGetAll();
+  const filtered = all.filter(o => operaMatchesFilters(o) && operaHasMatchingInstance(o));
+  if (!filtered.length) { alert('Nessuna Opera corrisponde ai filtri attuali.'); return; }
+  const tagRaw = prompt(`Aggiungi un Modificatore a tutte le ${filtered.length} Opere trovate con i filtri/ricerca attuali. Nome del Modificatore:`);
+  if (!tagRaw || !tagRaw.trim()) return;
+  const tag = normalizeTag(tagRaw);
+  if (!confirm(`Aggiungere il Modificatore "${tag}" a ${filtered.length} Opere?`)) return;
+  for (const opera of filtered) {
+    opera.modifiers = addNormalizedTag(opera.modifiers, tag);
+    opera.updatedAt = getLocalDateString();
+    await dbSave(opera);
+  }
+  await registerTagsInRegistry('modifiers', [tag]);
+  await afterTaxonomyChange();
+  alert(`Modificatore "${tag}" aggiunto a ${filtered.length} Opere.`);
 }
 
 /* =====================================================================================
@@ -2684,6 +3123,8 @@ async function reloadAppStateAfterImport() {
   document.getElementById('webdav-url').value = await getSetting('webdavUrl', '');
   document.getElementById('webdav-username').value = await getSetting('webdavUsername', '');
   document.getElementById('webdav-password').value = '';
+  await refreshTagAliasCache();
+  await refreshTagColorCache();
 
   renderNav('nav-desktop-slot', { vertical: true });
   renderNav('nav-mobile-slot', { vertical: false });
@@ -2692,7 +3133,7 @@ async function reloadAppStateAfterImport() {
   renderNavOrderList();
   updateNavLabelsToggleBtn();
 
-  catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [] };
+  catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [], recentDays: null, series: [], collana: [], rating: [] };
   catalogPage = 1;
   await renderFiltersPanels();
   await renderCatalogo();
