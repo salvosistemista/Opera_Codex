@@ -676,7 +676,7 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.22';
+const APP_VERSION = '1.23';
 
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 3; // bump da 2 a 3: aggiunge lo store "autori" anche a chi aveva già aperto le versioni precedenti
@@ -830,6 +830,17 @@ async function unlinkAuthorFromOpera(authorId, operaId) {
 async function unlinkOperaFromAllAuthors(operaId) {
   const linked = await getAuthorsLinkedToOpera(operaId);
   await Promise.all(linked.map(a => unlinkAuthorFromOpera(a.id, operaId)));
+}
+
+// Cache sincrona in memoria degli id di Opera che hanno almeno una scheda autore collegata, per
+// poterla consultare durante il filtraggio del Catalogo (sincrono) senza dover leggere lo store
+// "autori" ad ogni render. Va aggiornata ogni volta che un collegamento Autore↔Opera cambia.
+let operaIdsWithAuthorCardCache = new Set();
+async function refreshAuthorCardCache() {
+  const authors = await getAllAuthors();
+  const set = new Set();
+  authors.forEach(a => (a.linkedOperaIds || []).forEach(id => set.add(id)));
+  operaIdsWithAuthorCardCache = set;
 }
 
 async function getAllTags(level) {
@@ -1554,7 +1565,7 @@ const MACRO_OPTIONS = ['Narrativa', 'Saggistica', 'Poesia & Teatro', 'Fumetti & 
 const EMPTY_TAG = '__NESSUNO__'; // valore sentinella per filtrare Opere senza tag in un dato livello
 const ANY_TAG = '__QUALSIASI__'; // valore sentinella per filtrare Opere/Istanze CON un valore (qualsiasi) in un dato campo
 
-let catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [], recentDays: null, series: [], collana: [], rating: [] };
+let catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [], recentDays: null, series: [], collana: [], rating: [], authorCard: [] };
 let catalogSort = 'updated-desc';
 let catalogPageSize = 25; // 10 | 25 | 50 | 'all'
 let seriesFilterOpen = false;
@@ -1599,7 +1610,7 @@ async function goToPage(page) {
   if (list && typeof list.scrollIntoView === 'function') list.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 async function resetCatalogFilters() {
-  catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [], recentDays: null, series: [], collana: [], rating: [] };
+  catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [], recentDays: null, series: [], collana: [], rating: [], authorCard: [] };
   catalogPage = 1;
   document.querySelectorAll('.catalog-search-input').forEach(el => el.value = '');
   document.querySelectorAll('.catalog-recentdays-input').forEach(el => el.value = '');
@@ -1669,6 +1680,12 @@ async function renderFiltersPanel(suffix) {
       ${pillButton('— Nessuna —', catalogFilters.rating.includes(EMPTY_TAG), `toggleFilterValue('rating','${EMPTY_TAG}')`)}
       ${pillButton('— Tutte —', catalogFilters.rating.includes(ANY_TAG), `toggleFilterValue('rating','${ANY_TAG}')`)}
       ${[1, 2, 3, 4, 5].map(n => pillButton('★'.repeat(n), catalogFilters.rating.includes(String(n)), `toggleFilterValue('rating','${n}')`)).join('')}
+    </div>
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Scheda Autore</p>
+    <div class="flex flex-wrap gap-1 mb-3">
+      ${pillButton('👤 Con scheda autore', catalogFilters.authorCard.includes(ANY_TAG), `toggleFilterValue('authorCard','${ANY_TAG}')`)}
+      ${pillButton('Senza scheda autore', catalogFilters.authorCard.includes(EMPTY_TAG), `toggleFilterValue('authorCard','${EMPTY_TAG}')`)}
     </div>
 
     <details class="mb-3" ${seriesFilterOpen ? 'open' : ''} ontoggle="seriesFilterOpen = this.open">
@@ -1893,6 +1910,7 @@ async function initApp() {
     updateGoogleDriveStatus();
     await refreshTagAliasCache();
     await refreshTagColorCache();
+    await refreshAuthorCardCache();
 
     renderNav('nav-desktop-slot', { vertical: true });
     renderNav('nav-mobile-slot', { vertical: false });
@@ -2022,6 +2040,7 @@ async function applyAuthorLinksFromOperaModal(operaId) {
   for (const a of currentlyLinked) {
     if (!keptAuthorIds.has(a.id)) await unlinkAuthorFromOpera(a.id, operaId);
   }
+  await refreshAuthorCardCache();
 }
 
 async function saveOperaFromForm() {
@@ -2219,6 +2238,7 @@ async function saveAuthorFromForm() {
   };
 
   if (authorId) { await updateAuthor(authorId, data); } else { await createAuthor(data); }
+  await refreshAuthorCardCache();
   closeModal('modal-author');
   await renderAutori();
   await refreshOperaAuthorLinks();
@@ -2230,6 +2250,7 @@ async function deleteAuthorFromModal() {
   if (!authorId) return;
   if (!confirm('Eliminare questa scheda autore? Le Opere collegate non verranno toccate, solo il collegamento.')) return;
   await deleteAuthor(authorId);
+  await refreshAuthorCardCache();
   closeModal('modal-author');
   await renderAutori();
   await refreshOperaAuthorLinks();
@@ -2822,6 +2843,11 @@ function operaMatchesFilters(opera) {
     const match = f.series.some(v => v === EMPTY_TAG ? !s : v === ANY_TAG ? !!s : s === v);
     if (!match) return false;
   }
+  if (f.authorCard.length) {
+    const has = operaIdsWithAuthorCardCache.has(opera.id);
+    const match = f.authorCard.some(v => v === EMPTY_TAG ? !has : v === ANY_TAG ? has : false);
+    if (!match) return false;
+  }
   if (f.recentDays) {
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - f.recentDays);
@@ -2922,7 +2948,7 @@ async function renderCatalogo() {
   const totalCount = all.length;
   const matchCount = filtered.length;
   const f = catalogFilters;
-  const hasActiveFilters = f.search || f.macro.length || f.subgenres.length || f.microgenres.length || f.modifiers.length || f.status.length || f.ownership.length || f.format.length || f.recentDays || f.series.length || f.collana.length || f.rating.length;
+  const hasActiveFilters = f.search || f.macro.length || f.subgenres.length || f.microgenres.length || f.modifiers.length || f.status.length || f.ownership.length || f.format.length || f.recentDays || f.series.length || f.collana.length || f.rating.length || f.authorCard.length;
 
   countEl.textContent = hasActiveFilters ? `${matchCount} opera/e trovate su ${totalCount} totali` : `${totalCount} opera/e in catalogo`;
 
@@ -3202,7 +3228,7 @@ async function deleteAllUnusedTags(level) {
 // Passa al Catalogo mostrando solo le Opere che hanno questo tag (sostituisce, non aggiunge,
 // l'eventuale filtro già impostato per quel livello).
 async function viewTagInCatalog(level, tag) {
-  catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [], recentDays: null, series: [], collana: [], rating: [] };
+  catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [], recentDays: null, series: [], collana: [], rating: [], authorCard: [] };
   catalogFilters[level] = [tag];
   catalogPage = 1;
   switchSection('catalogo');
@@ -3540,8 +3566,10 @@ async function importAuthorsFromObject(data) {
     await dbSave(record, STORE_AUTORI);
     if (match) updated++; else added++;
   }
+  await refreshAuthorCardCache();
   await renderAutori();
   await refreshOperaAuthorLinks();
+  if (currentSection === 'catalogo') await renderCatalogo();
   alert(`Import schede autori completato: ${added} aggiunte, ${updated} aggiornate.`);
   return true;
 }
@@ -3773,6 +3801,7 @@ async function reloadAppStateAfterImport() {
   updateGoogleDriveStatus();
   await refreshTagAliasCache();
   await refreshTagColorCache();
+  await refreshAuthorCardCache();
 
   renderNav('nav-desktop-slot', { vertical: true });
   renderNav('nav-mobile-slot', { vertical: false });
@@ -3781,7 +3810,7 @@ async function reloadAppStateAfterImport() {
   renderNavOrderList();
   updateNavLabelsToggleBtn();
 
-  catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [], recentDays: null, series: [], collana: [], rating: [] };
+  catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [], recentDays: null, series: [], collana: [], rating: [], authorCard: [] };
   catalogPage = 1;
   await renderFiltersPanels();
   await renderCatalogo();
