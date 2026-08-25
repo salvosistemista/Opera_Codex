@@ -676,7 +676,7 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.21';
+const APP_VERSION = '1.22';
 
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 3; // bump da 2 a 3: aggiunge lo store "autori" anche a chi aveva già aperto le versioni precedenti
@@ -2165,8 +2165,19 @@ async function renderAuthorLinkedOperas() {
   container.innerHTML = operas.map(o => `
     <div class="flex items-center justify-between ui-btn-sec rounded-lg px-2 py-1.5 text-xs">
       <span class="truncate">${o.title}</span>
-      <button type="button" onclick="removeAuthorLinkedOpera('${o.id}')" class="text-red-500 font-bold px-1.5 shrink-0">✕</button>
+      <span class="flex gap-1 shrink-0">
+        <button type="button" onclick="editLinkedOperaFromAuthorModal('${o.id}')" class="ui-btn-sec w-6 h-6 rounded-md flex items-center justify-center" title="Modifica Opera">✎</button>
+        <button type="button" onclick="removeAuthorLinkedOpera('${o.id}')" class="text-red-500 font-bold px-1.5" title="Rimuovi collegamento">✕</button>
+      </span>
     </div>`).join('');
+}
+
+// Apre la scheda "Modifica Opera" per un'Opera collegata, chiudendo prima il modale Autore
+// (entrambi i modali condividono lo stesso livello di sovrapposizione, quindi non vengono
+// mai tenuti aperti insieme: si passa esplicitamente dall'uno all'altro).
+function editLinkedOperaFromAuthorModal(operaId) {
+  closeModal('modal-author');
+  openOperaModal(operaId);
 }
 
 function removeAuthorLinkedOpera(operaId) {
