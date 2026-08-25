@@ -140,6 +140,15 @@
         <div id="catalogo-pagination" class="flex items-center justify-center gap-2 mt-4 mb-16 md:mb-6"></div>
       </section>
 
+      <section id="section-autori" class="hidden">
+        <div class="flex items-center justify-between mb-3 gap-2">
+          <h2 class="text-xl font-bold">Autori</h2>
+          <button onclick="openAuthorModal()" class="ui-accent-bg text-white px-3 py-2 rounded-xl text-xs font-semibold shrink-0">+ Nuova scheda</button>
+        </div>
+        <input id="author-search-inline" type="text" placeholder="Cerca per nome, biografia, tematiche, impatto..." oninput="onAuthorSearch(this.value)" class="ui-input w-full p-2.5 rounded-xl border text-sm mb-3">
+        <div id="autori-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+      </section>
+
       <section id="section-tassonomia" class="hidden">
         <h2 class="text-xl font-bold mb-1">Tassonomia</h2>
         <p class="ui-muted text-sm mb-3">Gestione di Sottogeneri, Micro-generi e Modificatori: conteggio d'uso (cliccabile per vederli nel Catalogo), rinomina a cascata, fusione o collegamento come sinonimi, spostamento tra livelli, colore, tag non usati.</p>
@@ -234,12 +243,24 @@
 
         <div class="ui-card border rounded-2xl p-5 mt-4">
           <p class="text-xs font-bold uppercase tracking-wider ui-accent-text mb-1">Backup e Ripristino</p>
-          <p class="ui-muted text-xs mb-3">Esporta l'intero database (Opere, Edizioni, Istanze, Sessioni di lettura, impostazioni) in un file JSON, o importane uno per ripristinare/sostituire i dati attuali.</p>
+          <p class="ui-muted text-xs mb-3">Esporta l'intero database (Opere, Edizioni, Istanze, Sessioni di lettura, Schede Autore, impostazioni) in un file JSON, o importane uno per ripristinare/sostituire i dati attuali.</p>
           <div class="flex flex-col gap-2">
             <button onclick="exportDatabaseToFile()" class="ui-accent-bg text-white py-2 rounded-lg text-xs font-semibold">⬇️ Esporta database (JSON)</button>
             <label class="ui-btn-sec py-2 rounded-lg text-xs font-semibold text-center cursor-pointer">
               ⬆️ Importa database (JSON)
               <input type="file" accept="application/json" onchange="onImportFileSelected(this.files[0]); this.value='';" class="hidden">
+            </label>
+          </div>
+        </div>
+
+        <div class="ui-card border rounded-2xl p-5 mt-4">
+          <p class="text-xs font-bold uppercase tracking-wider ui-accent-text mb-1">Backup Schede Autori</p>
+          <p class="ui-muted text-xs mb-3">Esporta o importa <strong>solo</strong> le schede autore (biografia, foto, tematiche, impatto, opere collegate), indipendentemente dal resto del database. L'import qui è <strong>additivo</strong>: aggiorna le schede con lo stesso nome e aggiunge le altre, senza toccare Opere/Edizioni/Istanze.</p>
+          <div class="flex flex-col gap-2">
+            <button onclick="exportAuthorsToFile()" class="ui-accent-bg text-white py-2 rounded-lg text-xs font-semibold">⬇️ Esporta schede autori (JSON)</button>
+            <label class="ui-btn-sec py-2 rounded-lg text-xs font-semibold text-center cursor-pointer">
+              ⬆️ Importa schede autori (JSON)
+              <input type="file" accept="application/json" onchange="onImportAuthorsFileSelected(this.files[0]); this.value='';" class="hidden">
             </label>
           </div>
         </div>
@@ -295,7 +316,7 @@
 
         <div class="ui-card border-2 border-red-500/40 rounded-2xl p-5 mt-4">
           <p class="text-xs font-bold uppercase tracking-wider text-red-500 mb-1">⚠️ Zona pericolosa</p>
-          <p class="ui-muted text-xs mb-3">Cancella <strong>tutto</strong> il database — ogni Opera, Edizione, Istanza e Sessione di lettura, oltre a tutte le impostazioni (tema, ordine menu, dimensione copertine, credenziali WebDAV). È come ripartire da un'installazione nuova. Richiede doppia conferma perché <strong>non è reversibile</strong>: se vuoi un modo per tornare indietro, esporta prima un backup (JSON o WebDAV).</p>
+          <p class="ui-muted text-xs mb-3">Cancella <strong>tutto</strong> il database — ogni Opera, Edizione, Istanza e Sessione di lettura, ogni Scheda Autore, oltre a tutte le impostazioni (tema, ordine menu, dimensione copertine, credenziali WebDAV). È come ripartire da un'installazione nuova. Richiede doppia conferma perché <strong>non è reversibile</strong>: se vuoi un modo per tornare indietro, esporta prima un backup (JSON o WebDAV).</p>
           <button onclick="resetEntireDatabase()" class="w-full py-2 rounded-lg text-xs font-semibold text-white" style="background-color:#dc2626;">🗑️ Cancella tutto il database</button>
         </div>
       </section>
@@ -340,11 +361,16 @@
         </div>
         <div>
           <label class="text-xs font-semibold ui-muted">Autori * <span class="opacity-60">(separati da virgola, in ordine di importanza)</span></label>
-          <input id="opera-authors" type="text" list="datalist-authors" placeholder="es. Neil Gaiman, Terry Pratchett" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+          <input id="opera-authors" type="text" list="datalist-authors" oninput="refreshOperaAuthorLinks()" placeholder="es. Neil Gaiman, Terry Pratchett" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+          <div id="opera-author-links" class="flex flex-col gap-1.5 mt-2"></div>
         </div>
         <div>
           <label class="text-xs font-semibold ui-muted">Descrizione / trama concettuale</label>
           <textarea id="opera-description" rows="2" class="ui-input w-full p-2.5 rounded-xl border mt-1"></textarea>
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted">Sinossi <span class="opacity-60">(testo libero, anche lungo)</span></label>
+          <textarea id="opera-synopsis" rows="6" class="ui-input w-full p-2.5 rounded-xl border mt-1"></textarea>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
@@ -560,6 +586,59 @@
     </div>
   </div>
 
+  <!-- ===================== MODALE SCHEDA AUTORE ===================== -->
+  <div id="modal-author" class="hidden fixed inset-0 z-50 flex items-end md:items-center justify-center">
+    <div class="absolute inset-0 bg-black/50" onclick="closeModal('modal-author')"></div>
+    <div class="relative ui-card border w-full md:w-[36rem] max-h-[92vh] overflow-y-auto p-5 rounded-t-2xl md:rounded-2xl">
+      <div class="flex items-center justify-between mb-4">
+        <p id="modal-author-title" class="font-bold text-lg">Nuova Scheda Autore</p>
+        <button onclick="closeModal('modal-author')" class="ui-btn-sec w-8 h-8 rounded-lg font-bold shrink-0">✕</button>
+      </div>
+      <input type="hidden" id="author-id">
+      <div class="flex flex-col gap-3">
+        <div class="flex items-center gap-3">
+          <div id="author-photo-preview-wrap" class="w-20 h-20 rounded-xl overflow-hidden shrink-0 ui-btn-sec flex items-center justify-center text-3xl">👤</div>
+          <div class="flex flex-col gap-1.5 flex-1">
+            <label class="ui-btn-sec text-center py-2 rounded-lg text-xs font-semibold cursor-pointer">
+              📷 Carica foto
+              <input type="file" accept="image/*" onchange="onAuthorPhotoFileSelected(this.files[0]); this.value='';" class="hidden">
+            </label>
+            <button onclick="removeAuthorPhotoImage()" class="ui-btn-sec py-1.5 rounded-lg text-[11px] font-semibold">Rimuovi foto</button>
+          </div>
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted">Nome *</label>
+          <input id="author-name" type="text" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted">Biografia</label>
+          <textarea id="author-biography" rows="5" class="ui-input w-full p-2.5 rounded-xl border mt-1"></textarea>
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted">Tematiche importanti trattate nelle sue opere</label>
+          <textarea id="author-themes" rows="3" class="ui-input w-full p-2.5 rounded-xl border mt-1"></textarea>
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted">Impatto sulla letteratura del suo tempo e futura</label>
+          <textarea id="author-impact" rows="3" class="ui-input w-full p-2.5 rounded-xl border mt-1"></textarea>
+        </div>
+        <div>
+          <label class="text-xs font-semibold ui-muted">Opere collegate</label>
+          <div id="author-linked-operas" class="flex flex-col gap-1 mt-1 mb-2"></div>
+          <input id="author-link-opera-search" type="text" placeholder="Cerca un'Opera nel catalogo da collegare..." oninput="onAuthorLinkOperaSearch(this.value)" class="ui-input w-full p-2 rounded-lg border text-xs">
+          <div id="author-link-opera-results" class="flex flex-col gap-1 mt-1"></div>
+        </div>
+      </div>
+      <div class="flex items-center justify-between mt-5 gap-2">
+        <button id="author-delete-btn" onclick="deleteAuthorFromModal()" class="hidden text-red-500 text-xs font-semibold px-3 py-2 rounded-xl">🗑 Elimina Scheda</button>
+        <div class="flex gap-2 ml-auto">
+          <button onclick="closeModal('modal-author')" class="ui-btn-sec px-4 py-2 rounded-xl text-sm font-semibold">Annulla</button>
+          <button onclick="saveAuthorFromForm()" class="ui-accent-bg text-white px-4 py-2 rounded-xl text-sm font-semibold">Salva</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ===================== MODALE RICERCA API A CASCATA ===================== -->
   <div id="modal-api-search" class="hidden fixed inset-0 z-50 flex items-end md:items-center justify-center">
     <div class="absolute inset-0 bg-black/50" onclick="closeModal('modal-api-search')"></div>
@@ -597,12 +676,13 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.20';
+const APP_VERSION = '1.21';
 
 const DB_NAME = 'OperaCodexDB';
-const DB_VERSION = 2; // bump da 1 a 2: aggiunge lo store "settings" anche a chi ha già aperto il Punto 1
+const DB_VERSION = 3; // bump da 2 a 3: aggiunge lo store "autori" anche a chi aveva già aperto le versioni precedenti
 const STORE_OPERE = 'opere';
 const STORE_SETTINGS = 'settings';
+const STORE_AUTORI = 'autori';
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -611,6 +691,7 @@ function openDB() {
       const db = e.target.result;
       if (!db.objectStoreNames.contains(STORE_OPERE)) db.createObjectStore(STORE_OPERE, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(STORE_SETTINGS)) db.createObjectStore(STORE_SETTINGS, { keyPath: 'key' });
+      if (!db.objectStoreNames.contains(STORE_AUTORI)) db.createObjectStore(STORE_AUTORI, { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -694,6 +775,61 @@ function formatAuthorsDisplay(authors) {
   if (!authors || !authors.length) return '';
   if (authors.length === 1) return authors[0];
   return authors.slice(0, -1).join(', ') + ' e ' + authors[authors.length - 1];
+}
+
+// --- SCHEDE AUTORE (store "autori") ------------------------------------------------------
+// Entità indipendente dal campo libero "authors[]" delle Opere: una scheda autore raccoglie
+// biografia, tematiche e impatto letterario, e può essere collegata esplicitamente a una o più
+// Opere presenti nel catalogo. Il collegamento è tenuto lato Autore (linkedOperaIds) perché è
+// l'autore la "fonte di verità" della relazione: un'Opera non sa nulla delle schede a cui è
+// collegata, si interroga sempre a partire dall'autore.
+function newAuthorSkeleton({ name, photoBase64 = '', biography = '', themes = '', impact = '', linkedOperaIds = [] }) {
+  const now = new Date().toISOString();
+  return { id: uid('author'), name: String(name).trim(), photoBase64, biography, themes, impact,
+    linkedOperaIds: [...linkedOperaIds], createdAt: now, updatedAt: now };
+}
+async function createAuthor(data) {
+  const author = newAuthorSkeleton(data);
+  await dbSave(author, STORE_AUTORI);
+  return author;
+}
+async function updateAuthor(authorId, patch) {
+  const author = await dbGet(authorId, STORE_AUTORI);
+  if (!author) throw new Error('Scheda autore non trovata: ' + authorId);
+  const updated = { ...author, ...patch, id: author.id, updatedAt: new Date().toISOString() };
+  await dbSave(updated, STORE_AUTORI);
+  return updated;
+}
+async function deleteAuthor(authorId) { return dbDelete(authorId, STORE_AUTORI); }
+async function getAllAuthors() {
+  const list = await dbGetAll(STORE_AUTORI);
+  return list.sort((a, b) => a.name.localeCompare(b.name, 'it'));
+}
+async function getAuthorsLinkedToOpera(operaId) {
+  const list = await getAllAuthors();
+  return list.filter(a => Array.isArray(a.linkedOperaIds) && a.linkedOperaIds.includes(operaId));
+}
+async function linkAuthorToOpera(authorId, operaId) {
+  const author = await dbGet(authorId, STORE_AUTORI);
+  if (!author) return;
+  if (!Array.isArray(author.linkedOperaIds)) author.linkedOperaIds = [];
+  if (!author.linkedOperaIds.includes(operaId)) {
+    author.linkedOperaIds.push(operaId);
+    author.updatedAt = new Date().toISOString();
+    await dbSave(author, STORE_AUTORI);
+  }
+}
+async function unlinkAuthorFromOpera(authorId, operaId) {
+  const author = await dbGet(authorId, STORE_AUTORI);
+  if (!author) return;
+  author.linkedOperaIds = (author.linkedOperaIds || []).filter(id => id !== operaId);
+  author.updatedAt = new Date().toISOString();
+  await dbSave(author, STORE_AUTORI);
+}
+// Quando un'Opera viene eliminata, rimuove il collegamento da ogni scheda autore che la referenzia.
+async function unlinkOperaFromAllAuthors(operaId) {
+  const linked = await getAuthorsLinkedToOpera(operaId);
+  await Promise.all(linked.map(a => unlinkAuthorFromOpera(a.id, operaId)));
 }
 
 async function getAllTags(level) {
@@ -889,9 +1025,9 @@ async function moveTagToLevel(fromLevel, toLevel, tag) {
 }
 
 // --- OPERA (L1) ---------------------------------------------------------------------------
-function newOperaSkeleton({ title, authors = [], description = '', series = null, seriesIndex = null, macro, subgenres = [], microgenres = [], modifiers = [] }) {
+function newOperaSkeleton({ title, authors = [], description = '', synopsis = '', series = null, seriesIndex = null, macro, subgenres = [], microgenres = [], modifiers = [] }) {
   const now = getLocalDateString();
-  return { id: uid('op'), title, authors: parseAuthorsList(authors), description, series, seriesIndex, macro,
+  return { id: uid('op'), title, authors: parseAuthorsList(authors), description, synopsis, series, seriesIndex, macro,
     subgenres: normalizeTagList(subgenres), microgenres: normalizeTagList(microgenres), modifiers: normalizeTagList(modifiers),
     createdAt: now, updatedAt: now, editions: [] };
 }
@@ -911,7 +1047,10 @@ async function updateOpera(operaId, patch) {
   await Promise.all(TAXONOMY_LEVELS.map(level => registerTagsInRegistry(level, updated[level])));
   return updated;
 }
-async function deleteOpera(operaId) { return dbDelete(operaId); }
+async function deleteOpera(operaId) {
+  await unlinkOperaFromAllAuthors(operaId);
+  return dbDelete(operaId);
+}
 
 // --- EDIZIONE (L2) --------------------------------------------------------------------------
 function newEditionSkeleton({ publisher = '', year = null, language = 'Italiano', description = '', alternateTitle = '' }) {
@@ -1376,9 +1515,11 @@ window.OperaCodex = {
 const ICON_CATALOGO = '<svg viewBox="0 0 24 24" class="w-full h-full" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="4" width="4" height="16" rx="1" fill="currentColor" opacity="0.55"/><rect x="8.5" y="6" width="4" height="14" rx="1" fill="currentColor" opacity="0.85"/><rect x="14" y="3" width="4" height="17" rx="1" fill="currentColor" opacity="0.55"/></svg>';
 const ICON_TASSONOMIA = '<svg viewBox="0 0 24 24" class="w-full h-full" xmlns="http://www.w3.org/2000/svg"><path d="M12.6 2.6 21 11a2 2 0 0 1 0 2.8l-6.6 6.6a2 2 0 0 1-2.8 0L3 11.8V4.6A2 2 0 0 1 5 2.6Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="7.4" cy="7.4" r="1.3" fill="currentColor"/></svg>';
 const ICON_IMPOSTAZIONI = '<svg viewBox="0 0 24 24" class="w-full h-full" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v3M12 18.5v3M4.5 4.5l2.1 2.1M17.4 17.4l2.1 2.1M2.5 12h3M18.5 12h3M4.5 19.5l2.1-2.1M17.4 6.6l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+const ICON_AUTORI = '<svg viewBox="0 0 24 24" class="w-full h-full" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="8" r="3.4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4.5 20c0-3.6 3.4-6.2 7.5-6.2s7.5 2.6 7.5 6.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
 
 const SECTIONS = [
   { key: 'catalogo',     icon: ICON_CATALOGO,     label: 'Catalogo' },
+  { key: 'autori',       icon: ICON_AUTORI,       label: 'Autori' },
   { key: 'tassonomia',   icon: ICON_TASSONOMIA,   label: 'Tassonomia' },
   { key: 'impostazioni', icon: ICON_IMPOSTAZIONI, label: 'Impostazioni' },
 ];
@@ -1644,6 +1785,7 @@ function switchSection(key) {
   document.getElementById('drawer-toggle-btn').classList.toggle('invisible', key !== 'catalogo');
   closeDrawer();
   if (key === 'tassonomia') renderTassonomia();
+  if (key === 'autori') renderAutori();
 }
 
 function openDrawer() {
@@ -1806,20 +1948,80 @@ function openOperaModal(operaId = null) {
       document.getElementById('opera-title').value = opera.title || '';
       document.getElementById('opera-authors').value = getOperaAuthors(opera).join(', ');
       document.getElementById('opera-description').value = opera.description || '';
+      document.getElementById('opera-synopsis').value = opera.synopsis || '';
       document.getElementById('opera-series').value = opera.series || '';
       document.getElementById('opera-series-index').value = opera.seriesIndex ?? '';
       document.getElementById('opera-macro').value = opera.macro || 'Narrativa';
       document.getElementById('opera-subgenres').value = (opera.subgenres || []).join(', ');
       document.getElementById('opera-microgenres').value = (opera.microgenres || []).join(', ');
       document.getElementById('opera-modifiers').value = (opera.modifiers || []).join(', ');
+      refreshOperaAuthorLinks();
     });
   } else {
     document.getElementById('modal-opera-title').textContent = 'Nuova Opera';
-    ['opera-title','opera-authors','opera-description','opera-series','opera-series-index',
+    ['opera-title','opera-authors','opera-description','opera-synopsis','opera-series','opera-series-index',
      'opera-subgenres','opera-microgenres','opera-modifiers'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('opera-macro').value = 'Narrativa';
+    refreshOperaAuthorLinks();
   }
   openModal('modal-opera');
+}
+
+// Pannello dinamico sotto il campo Autori: per ogni nome digitato, permette di collegare
+// quell'autore a una scheda autore già esistente, crearne una nuova al volo, o lasciarlo
+// senza scheda. Il collegamento effettivo viene applicato al salvataggio (vedi saveOperaFromForm),
+// così funziona identicamente sia per Opere nuove che esistenti.
+async function refreshOperaAuthorLinks() {
+  const container = document.getElementById('opera-author-links');
+  if (!container) return;
+  const raw = document.getElementById('opera-authors').value;
+  const names = parseAuthorsList(raw.split(','));
+  if (!names.length) { container.innerHTML = ''; return; }
+
+  const operaId = document.getElementById('opera-id').value;
+  const [allAuthors, linkedToThisOpera] = await Promise.all([
+    getAllAuthors(),
+    operaId ? getAuthorsLinkedToOpera(operaId) : Promise.resolve([]),
+  ]);
+
+  container.innerHTML = names.map(name => {
+    const preselected = linkedToThisOpera.find(a => a.name.toLowerCase() === name.toLowerCase());
+    const options = [
+      `<option value="">— nessuna scheda —</option>`,
+      ...allAuthors.map(a => `<option value="${a.id}" ${preselected && preselected.id === a.id ? 'selected' : ''}>${a.name}</option>`),
+      `<option value="__new__">+ Crea nuova scheda "${name}"</option>`,
+    ].join('');
+    return `
+      <div data-author-row data-author-name="${name.replace(/"/g, '&quot;')}" class="flex items-center gap-2">
+        <span class="text-[11px] ui-muted flex-1 truncate" title="${name}">👤 ${name}</span>
+        <select class="ui-input p-1.5 rounded-lg border text-[11px] flex-1">${options}</select>
+      </div>`;
+  }).join('');
+}
+
+// Applica, dopo il salvataggio dell'Opera (che a questo punto ha sempre un id reale), i
+// collegamenti scelti nel pannello: crea le eventuali nuove schede, collega/scollega gli
+// autori in base alla selezione corrente, riconciliando anche le rimozioni.
+async function applyAuthorLinksFromOperaModal(operaId) {
+  const rows = document.querySelectorAll('#opera-author-links [data-author-row]');
+  const keptAuthorIds = new Set();
+  for (const row of rows) {
+    const select = row.querySelector('select');
+    const name = row.dataset.authorName;
+    let val = select.value;
+    if (val === '__new__') {
+      const created = await createAuthor({ name });
+      val = created.id;
+    }
+    if (val) {
+      await linkAuthorToOpera(val, operaId);
+      keptAuthorIds.add(val);
+    }
+  }
+  const currentlyLinked = await getAuthorsLinkedToOpera(operaId);
+  for (const a of currentlyLinked) {
+    if (!keptAuthorIds.has(a.id)) await unlinkAuthorFromOpera(a.id, operaId);
+  }
 }
 
 async function saveOperaFromForm() {
@@ -1831,6 +2033,7 @@ async function saveOperaFromForm() {
   const data = {
     title, authors,
     description: document.getElementById('opera-description').value.trim(),
+    synopsis: document.getElementById('opera-synopsis').value.trim(),
     series: document.getElementById('opera-series').value.trim() || null,
     seriesIndex: document.getElementById('opera-series-index').value ? Number(document.getElementById('opera-series-index').value) : null,
     macro: document.getElementById('opera-macro').value,
@@ -1839,9 +2042,11 @@ async function saveOperaFromForm() {
     modifiers: parseTagInput(document.getElementById('opera-modifiers').value),
   };
 
-  if (operaId) { await updateOpera(operaId, data); } else { await createOpera(data); }
+  const savedOpera = operaId ? await updateOpera(operaId, data) : await createOpera(data);
+  await applyAuthorLinksFromOperaModal(savedOpera.id);
   closeModal('modal-opera');
   await renderCatalogo();
+  if (currentSection === 'autori') await renderAutori();
 }
 
 async function deleteOperaFromModal() {
@@ -1851,6 +2056,173 @@ async function deleteOperaFromModal() {
   await deleteOpera(operaId);
   closeModal('modal-opera');
   await renderCatalogo();
+}
+
+// --- SCHEDE AUTORE (UI) --------------------------------------------------------------------
+
+let authorSearchQuery = '';
+let authorPhotoPreviewBase64 = '';
+let authorModalLinkedOperaIds = [];
+
+async function onAuthorSearch(value) {
+  authorSearchQuery = value;
+  await renderAutori();
+}
+
+function authorCardHtml(author) {
+  const excerpt = (author.biography || '').trim();
+  return `
+    <div class="ui-card border rounded-2xl p-3 flex gap-3 cursor-pointer" onclick="openAuthorModal('${author.id}')">
+      ${author.photoBase64
+        ? `<img src="${author.photoBase64}" class="w-16 h-16 rounded-xl object-cover shrink-0">`
+        : `<div class="w-16 h-16 rounded-xl ui-btn-sec flex items-center justify-center text-2xl shrink-0">👤</div>`}
+      <div class="min-w-0 flex-1">
+        <p class="font-bold truncate">${author.name}</p>
+        <p class="ui-muted text-xs line-clamp-2 mt-0.5">${excerpt ? excerpt.slice(0, 140) : 'Nessuna biografia inserita.'}</p>
+        <p class="text-[10px] ui-accent-text font-semibold mt-1">${(author.linkedOperaIds || []).length} opera/e collegate</p>
+      </div>
+    </div>`;
+}
+
+async function renderAutori() {
+  const container = document.getElementById('autori-list');
+  if (!container) return;
+  const authors = await getAllAuthors();
+  const q = authorSearchQuery.trim().toLowerCase();
+  const filtered = q
+    ? authors.filter(a => [a.name, a.biography, a.themes, a.impact].join(' \n ').toLowerCase().includes(q))
+    : authors;
+
+  if (!authors.length) {
+    container.innerHTML = `
+      <div class="ui-card border rounded-2xl p-8 text-center col-span-full">
+        <p class="text-3xl mb-2">✍️</p>
+        <p class="font-semibold mb-1">Nessuna scheda autore</p>
+        <p class="ui-muted text-sm">Usa "+ Nuova scheda" per crearne una, oppure collega un autore direttamente dalla scheda di un'Opera.</p>
+      </div>`;
+    return;
+  }
+  if (!filtered.length) {
+    container.innerHTML = `
+      <div class="ui-card border rounded-2xl p-8 text-center col-span-full">
+        <p class="text-3xl mb-2">🔍</p>
+        <p class="font-semibold mb-1">Nessun autore corrisponde alla ricerca</p>
+      </div>`;
+    return;
+  }
+  container.innerHTML = filtered.map(authorCardHtml).join('');
+}
+
+function setAuthorPhotoPreview(base64) {
+  authorPhotoPreviewBase64 = base64 || '';
+  const wrap = document.getElementById('author-photo-preview-wrap');
+  wrap.innerHTML = authorPhotoPreviewBase64 ? `<img src="${authorPhotoPreviewBase64}" class="w-full h-full object-cover">` : '👤';
+}
+function removeAuthorPhotoImage() { setAuthorPhotoPreview(''); }
+
+async function onAuthorPhotoFileSelected(file) {
+  if (!file) return;
+  try {
+    const base64 = await resizeAndCompressImageFromBlob(file, 400, 0.8);
+    setAuthorPhotoPreview(base64);
+  } catch (err) {
+    alert("Impossibile elaborare l'immagine: " + err.message);
+  }
+}
+
+async function openAuthorModal(authorId = null) {
+  document.getElementById('author-id').value = authorId || '';
+  document.getElementById('author-delete-btn').classList.toggle('hidden', !authorId);
+  document.getElementById('author-link-opera-search').value = '';
+  document.getElementById('author-link-opera-results').innerHTML = '';
+  setAuthorPhotoPreview('');
+
+  if (authorId) {
+    document.getElementById('modal-author-title').textContent = 'Modifica Scheda Autore';
+    const author = await dbGet(authorId, STORE_AUTORI);
+    document.getElementById('author-name').value = author.name || '';
+    document.getElementById('author-biography').value = author.biography || '';
+    document.getElementById('author-themes').value = author.themes || '';
+    document.getElementById('author-impact').value = author.impact || '';
+    setAuthorPhotoPreview(author.photoBase64 || '');
+    authorModalLinkedOperaIds = [...(author.linkedOperaIds || [])];
+  } else {
+    document.getElementById('modal-author-title').textContent = 'Nuova Scheda Autore';
+    ['author-name','author-biography','author-themes','author-impact'].forEach(id => document.getElementById(id).value = '');
+    authorModalLinkedOperaIds = [];
+  }
+  await renderAuthorLinkedOperas();
+  openModal('modal-author');
+}
+
+async function renderAuthorLinkedOperas() {
+  const container = document.getElementById('author-linked-operas');
+  if (!authorModalLinkedOperaIds.length) {
+    container.innerHTML = '<p class="ui-muted text-[11px]">Nessuna opera collegata.</p>';
+    return;
+  }
+  const operas = (await Promise.all(authorModalLinkedOperaIds.map(id => dbGet(id)))).filter(Boolean);
+  container.innerHTML = operas.map(o => `
+    <div class="flex items-center justify-between ui-btn-sec rounded-lg px-2 py-1.5 text-xs">
+      <span class="truncate">${o.title}</span>
+      <button type="button" onclick="removeAuthorLinkedOpera('${o.id}')" class="text-red-500 font-bold px-1.5 shrink-0">✕</button>
+    </div>`).join('');
+}
+
+function removeAuthorLinkedOpera(operaId) {
+  authorModalLinkedOperaIds = authorModalLinkedOperaIds.filter(id => id !== operaId);
+  renderAuthorLinkedOperas();
+}
+
+async function onAuthorLinkOperaSearch(value) {
+  const q = value.trim().toLowerCase();
+  const resultsEl = document.getElementById('author-link-opera-results');
+  if (!q) { resultsEl.innerHTML = ''; return; }
+  const all = await dbGetAll();
+  const matches = all.filter(o => o.title.toLowerCase().includes(q) && !authorModalLinkedOperaIds.includes(o.id)).slice(0, 8);
+  resultsEl.innerHTML = matches.map(o => `
+    <button type="button" onclick="addAuthorLinkedOpera('${o.id}')" class="ui-btn-sec text-left px-2 py-1.5 rounded-lg text-xs">
+      + ${o.title} <span class="ui-muted">(${formatAuthorsDisplay(getOperaAuthors(o))})</span>
+    </button>`).join('') || '<p class="ui-muted text-[11px] px-1">Nessun risultato.</p>';
+}
+
+function addAuthorLinkedOpera(operaId) {
+  if (!authorModalLinkedOperaIds.includes(operaId)) authorModalLinkedOperaIds.push(operaId);
+  document.getElementById('author-link-opera-search').value = '';
+  document.getElementById('author-link-opera-results').innerHTML = '';
+  renderAuthorLinkedOperas();
+}
+
+async function saveAuthorFromForm() {
+  const authorId = document.getElementById('author-id').value;
+  const name = document.getElementById('author-name').value.trim();
+  if (!name) { alert('Il nome è obbligatorio.'); return; }
+
+  const data = {
+    name,
+    biography: document.getElementById('author-biography').value.trim(),
+    themes: document.getElementById('author-themes').value.trim(),
+    impact: document.getElementById('author-impact').value.trim(),
+    photoBase64: authorPhotoPreviewBase64,
+    linkedOperaIds: [...authorModalLinkedOperaIds],
+  };
+
+  if (authorId) { await updateAuthor(authorId, data); } else { await createAuthor(data); }
+  closeModal('modal-author');
+  await renderAutori();
+  await refreshOperaAuthorLinks();
+  if (currentSection === 'catalogo') await renderCatalogo();
+}
+
+async function deleteAuthorFromModal() {
+  const authorId = document.getElementById('author-id').value;
+  if (!authorId) return;
+  if (!confirm('Eliminare questa scheda autore? Le Opere collegate non verranno toccate, solo il collegamento.')) return;
+  await deleteAuthor(authorId);
+  closeModal('modal-author');
+  await renderAutori();
+  await refreshOperaAuthorLinks();
+  if (currentSection === 'catalogo') await renderCatalogo();
 }
 
 // --- EDIZIONE ----------------------------------------------------------------------------
@@ -2571,12 +2943,22 @@ async function renderCatalogo() {
   const pageItems = catalogPageSize === 'all' ? filtered : filtered.slice(startIdx, startIdx + pageSize);
   const instanceFilterActive = catalogFilters.status.length > 0 || catalogFilters.ownership.length > 0 || catalogFilters.format.length > 0 || catalogFilters.collana.length > 0 || catalogFilters.rating.length > 0;
 
+  const allAuthorsForBadges = await getAllAuthors();
+  const authorsByOpera = {};
+  allAuthorsForBadges.forEach(a => (a.linkedOperaIds || []).forEach(oid => {
+    (authorsByOpera[oid] = authorsByOpera[oid] || []).push(a);
+  }));
+
   container.innerHTML = pageItems.map(opera => `
     <div class="ui-card border rounded-2xl p-4">
       <div class="flex items-start justify-between gap-2">
         <div>
           <p class="font-bold">${opera.title}</p>
           <p class="ui-muted text-xs">${formatAuthorsDisplay(getOperaAuthors(opera))}${opera.series ? ' · ' + opera.series + (opera.seriesIndex ? ' #' + opera.seriesIndex : '') : ''}</p>
+          ${(authorsByOpera[opera.id] || []).length ? `
+            <div class="flex flex-wrap gap-1 mt-1">
+              ${authorsByOpera[opera.id].map(a => `<button type="button" onclick="event.stopPropagation(); openAuthorModal('${a.id}')" class="ui-btn-sec px-1.5 py-0.5 rounded-md text-[10px]">👤 ${a.name}</button>`).join('')}
+            </div>` : ''}
           <p class="text-[10px] font-semibold ui-accent-text uppercase tracking-wide mt-1">${opera.macro}</p>
           ${(opera.subgenres.length || opera.microgenres.length || opera.modifiers.length) ? `
             <div class="flex flex-wrap gap-1 mt-1.5">
@@ -3072,10 +3454,85 @@ async function clearStore(name) {
 
 async function buildExportPayload() {
   const opere = await dbGetAll('opere');
+  const autori = await dbGetAll(STORE_AUTORI);
   const settingsRecords = await dbGetAll('settings');
   const settings = {};
   settingsRecords.forEach(s => { settings[s.key] = s.value; });
-  return { app: 'Opera Codex', exportVersion: 1, exportDate: getLocalDateString(), opere, settings };
+  return { app: 'Opera Codex', exportVersion: 2, exportDate: getLocalDateString(), opere, autori, settings };
+}
+
+// --- EXPORT/IMPORT DEDICATO ALLE SOLE SCHEDE AUTORE -----------------------------------------
+// Indipendente dal backup completo: pensato per portare le schede autore (bio, foto, temi,
+// impatto, collegamenti) da un'installazione all'altra senza toccare Opere/Edizioni/Istanze.
+// A differenza dell'import completo, questo è ADDITIVO: le schede con lo stesso nome (case
+// insensitive) di una già presente vengono aggiornate, le altre vengono aggiunte.
+async function buildAuthorsExportPayload() {
+  const autori = await dbGetAll(STORE_AUTORI);
+  return { app: 'Opera Codex', exportType: 'autori', exportVersion: 1, exportDate: getLocalDateString(), autori };
+}
+
+async function exportAuthorsToFile() {
+  const payload = await buildAuthorsExportPayload();
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `opera-codex_autori_${getLocalDateString()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function onImportAuthorsFileSelected(file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    let data;
+    try { data = JSON.parse(e.target.result); }
+    catch (err) { alert('File non valido: non è un JSON leggibile (' + err.message + ').'); return; }
+    await importAuthorsFromObject(data);
+  };
+  reader.onerror = () => alert('Impossibile leggere il file selezionato.');
+  reader.readAsText(file);
+}
+
+async function importAuthorsFromObject(data) {
+  if (!data || !Array.isArray(data.autori)) {
+    alert('Il file non sembra un export valido di schede autori di Opera Codex: manca l\'elenco "autori".');
+    return false;
+  }
+  const existing = await getAllAuthors();
+  const existingByName = new Map(existing.map(a => [a.name.toLowerCase(), a]));
+  const ok = confirm(
+    `Importare ${data.autori.length} schede autore da questo file?\n\n` +
+    `Le schede con lo stesso nome di una già presente verranno AGGIORNATE, le altre verranno aggiunte. ` +
+    `Opere, Edizioni e Istanze non vengono toccate da questo import.`
+  );
+  if (!ok) return false;
+
+  let added = 0, updated = 0;
+  for (const incoming of data.autori) {
+    if (!incoming || !incoming.name) continue;
+    const match = existingByName.get(String(incoming.name).toLowerCase());
+    const record = {
+      id: match ? match.id : uid('author'),
+      name: incoming.name,
+      photoBase64: incoming.photoBase64 || '',
+      biography: incoming.biography || '',
+      themes: incoming.themes || '',
+      impact: incoming.impact || '',
+      linkedOperaIds: Array.isArray(incoming.linkedOperaIds) ? incoming.linkedOperaIds.filter(Boolean) : [],
+      createdAt: match ? match.createdAt : (incoming.createdAt || new Date().toISOString()),
+      updatedAt: new Date().toISOString(),
+    };
+    await dbSave(record, STORE_AUTORI);
+    if (match) updated++; else added++;
+  }
+  await renderAutori();
+  await refreshOperaAuthorLinks();
+  alert(`Import schede autori completato: ${added} aggiunte, ${updated} aggiornate.`);
+  return true;
 }
 
 async function exportDatabaseToFile() {
@@ -3257,13 +3714,17 @@ async function importDatabaseFromObject(data) {
 
   await clearStore('opere');
   await clearStore('settings');
+  await clearStore(STORE_AUTORI);
   for (const opera of data.opere) { await dbSave(opera, 'opere'); }
+  if (Array.isArray(data.autori)) {
+    for (const author of data.autori) { await dbSave(author, STORE_AUTORI); }
+  }
   if (data.settings && typeof data.settings === 'object') {
     for (const [key, value] of Object.entries(data.settings)) { await setSetting(key, value); }
   }
 
   await reloadAppStateAfterImport();
-  alert(`Importazione completata: ${data.opere.length} Opere caricate.`);
+  alert(`Importazione completata: ${data.opere.length} Opere caricate` + (Array.isArray(data.autori) ? `, ${data.autori.length} schede autore.` : '.'));
   return true;
 }
 
@@ -3273,13 +3734,14 @@ async function importDatabaseFromObject(data) {
 // nuova. Doppia conferma esplicita perché non è reversibile — a differenza dell'import JSON,
 // qui non c'è nessun file da cui recuperare i dati se non se n'è fatto un backup prima.
 async function resetEntireDatabase() {
-  const firstOk = confirm('Vuoi davvero cancellare TUTTO il database di Opera Codex? Ogni Opera, Edizione, Istanza e Sessione di lettura verrà eliminata per sempre. Questa azione non è reversibile.');
+  const firstOk = confirm('Vuoi davvero cancellare TUTTO il database di Opera Codex? Ogni Opera, Edizione, Istanza, Sessione di lettura e Scheda Autore verrà eliminata per sempre. Questa azione non è reversibile.');
   if (!firstOk) return;
   const secondOk = confirm('Ultima conferma: si ricomincia completamente da zero, anche le impostazioni (tema, ordine menu, dimensione copertine, credenziali WebDAV) torneranno ai valori di default. Procedere davvero?');
   if (!secondOk) return;
 
   await clearStore('opere');
   await clearStore('settings');
+  await clearStore(STORE_AUTORI);
   await reloadAppStateAfterImport();
   alert('Database azzerato: sei ripartito da zero.');
 }
@@ -3313,6 +3775,7 @@ async function reloadAppStateAfterImport() {
   await renderFiltersPanels();
   await renderCatalogo();
   if (currentSection === 'tassonomia') await renderTassonomia();
+  if (currentSection === 'autori') await renderAutori();
 }
 
 /* =====================================================================================
