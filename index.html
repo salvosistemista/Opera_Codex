@@ -159,6 +159,16 @@
         <div id="autori-pagination" class="flex items-center justify-center gap-2 mt-4 mb-16 md:mb-6"></div>
       </section>
 
+      <section id="section-diario" class="hidden">
+        <div class="flex items-center justify-between mb-3 gap-2">
+          <h2 class="text-xl font-bold">Diario</h2>
+        </div>
+        <p class="ui-muted text-sm mb-2">Cronologia di letture, inserimenti e modifiche. Usa "☰ Filtri" per restringere per tipo evento, autore o intervallo di date.</p>
+        <p id="diario-count" class="ui-muted text-xs mb-3"></p>
+        <div id="diario-list" class="flex flex-col gap-2"></div>
+        <div id="diario-pagination" class="flex items-center justify-center gap-2 mt-4 mb-16 md:mb-6"></div>
+      </section>
+
       <section id="section-tassonomia" class="hidden">
         <h2 class="text-xl font-bold mb-1">Tassonomia</h2>
         <p class="ui-muted text-sm mb-3">Gestione di Sottogeneri, Micro-generi, Modificatori e Nazionalità (autori): conteggio d'uso (cliccabile per vedere i record corrispondenti), rinomina a cascata, fusione o collegamento come sinonimi, spostamento tra livelli, colore, tag non usati.</p>
@@ -715,14 +725,16 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.28';
+const APP_VERSION = '1.29';
 
 const DB_NAME = 'OperaCodexDB';
-const DB_VERSION = 4; // bump da 3 a 4: nessun nuovo store, ma gli autori guadagnano i campi birthYear/periodTag
-                       // (popolati da una migrazione idempotente lanciata in initApp, vedi migratePeriodTagsIfNeeded)
+const DB_VERSION = 5; // bump da 4 a 5: nuovo store "diario" (eventi cronologici di lettura/modifica),
+                       // popolato retroattivamente da una migrazione idempotente lanciata in initApp
+                       // (vedi migrateDiaryRetroactiveIfNeeded) e alimentato da qui in poi ad ogni scrittura.
 const STORE_OPERE = 'opere';
 const STORE_SETTINGS = 'settings';
 const STORE_AUTORI = 'autori';
+const STORE_DIARIO = 'diario';
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -732,6 +744,7 @@ function openDB() {
       if (!db.objectStoreNames.contains(STORE_OPERE)) db.createObjectStore(STORE_OPERE, { keyPath: 'id' });
       if (!db.objectStoreNames.contains(STORE_SETTINGS)) db.createObjectStore(STORE_SETTINGS, { keyPath: 'key' });
       if (!db.objectStoreNames.contains(STORE_AUTORI)) db.createObjectStore(STORE_AUTORI, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(STORE_DIARIO)) db.createObjectStore(STORE_DIARIO, { keyPath: 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -815,6 +828,150 @@ function formatAuthorsDisplay(authors) {
   if (!authors || !authors.length) return '';
   if (authors.length === 1) return authors[0];
   return authors.slice(0, -1).join(', ') + ' e ' + authors[authors.length - 1];
+}
+
+// --- DIARIO (store "diario") ---------------------------------------------------------------
+// Registro cronologico di eventi: creazioni, modifiche, cambi di stato lettura e progresso.
+// Ogni Opera/Edizione/Istanza/Autore genera eventi ai punti di scrittura già esistenti (vedi
+// gli hook dentro create/update/delete più sotto), così il Diario si costruisce da solo senza
+// bisogno di logica separata da mantenere sincronizzata. Un evento porta sempre uno snapshot di
+// titolo/autori al momento in cui è stato generato, così resta leggibile anche se il record
+// referenziato viene in seguito eliminato (in quel caso non sarà più cliccabile).
+function formatItDate(dateStr) {
+  if (!dateStr) return '';
+  const d = String(dateStr).slice(0, 10); // tollera sia "YYYY-MM-DD" sia ISO con orario
+  const parts = d.split('-');
+  if (parts.length !== 3) return dateStr;
+  return `${parts[2]}/${parts[1]}/${parts[0]}`;
+}
+
+const DIARY_EVENT_META = {
+  created:   { icon: '➕', label: 'Aggiunto' },
+  edited:    { icon: '✏️', label: 'Modificato' },
+  deleted:   { icon: '🗑️', label: 'Eliminato' },
+  started:   { icon: '📖', label: 'Iniziato' },
+  completed: { icon: '✅', label: 'Completato' },
+  suspended: { icon: '⏸️', label: 'Sospeso' },
+  abandoned: { icon: '⛔', label: 'Abbandonato' },
+  reading:   { icon: '📈', label: 'Progresso lettura' },
+};
+const DIARY_LEVEL_LABEL = { opera: 'Opera', edizione: 'Edizione', istanza: 'Copia', author: 'Autore' };
+
+function newDiaryEvent({ type, level, timestamp, operaId = null, edizioneId = null, istanzaId = null, sessionId = null,
+                          authorId = null, title = '', authorNames = [], changes = null, details = null, approx = false }) {
+  return { id: uid('diary'), type, level, timestamp: timestamp || getLocalDateString(), operaId, edizioneId, istanzaId,
+    sessionId, authorId, title, authorNames: [...authorNames], changes, details, approx };
+}
+async function logDiaryEvent(evt) { return dbSave(evt, STORE_DIARIO); }
+
+// Confronta un sottoinsieme di campi tra vecchio e nuovo record e produce una lista di "changes"
+// leggibili per l'evento 'edited'. I campi di testo lungo (sinossi, descrizioni, biografia) non
+// vengono mai riportati per intero: solo "aggiunta"/"modificata"/"rimossa", per non appesantire
+// il Diario e non duplicare contenuto già visibile nella scheda.
+function formatDiffValue(val) {
+  if (Array.isArray(val)) return val.length ? val.join(', ') : '—';
+  if (val === null || val === undefined || val === '') return '—';
+  return String(val);
+}
+function diffFields(oldObj, newObj, fieldDefs) {
+  const changes = [];
+  fieldDefs.forEach(({ key, label, kind }) => {
+    const oldVal = oldObj ? oldObj[key] : undefined;
+    const newVal = newObj[key];
+    const oldCmp = Array.isArray(oldVal) ? JSON.stringify(oldVal) : (oldVal ?? null);
+    const newCmp = Array.isArray(newVal) ? JSON.stringify(newVal) : (newVal ?? null);
+    if (oldCmp === newCmp) return;
+    if (kind === 'text') {
+      changes.push({ label, display: !oldVal ? `${label} aggiunta` : (!newVal ? `${label} rimossa` : `${label} modificata`) });
+    } else if (kind === 'rating') {
+      changes.push({ label, display: `${label}: ${oldVal ? '★'.repeat(oldVal) : '—'} → ${newVal ? '★'.repeat(newVal) : '—'}` });
+    } else {
+      changes.push({ label, display: `${label}: ${formatDiffValue(oldVal)} → ${formatDiffValue(newVal)}` });
+    }
+  });
+  return changes;
+}
+
+const SESSION_STATUS_EVENT_TYPE = { 'In Lettura': 'started', 'Completato': 'completed', 'Sospeso': 'suspended', 'Abbandonato': 'abandoned' };
+async function logSessionStatusChange(opera, edizioneId, istanzaId, session, oldStatus, newStatus) {
+  if (oldStatus === newStatus || !SESSION_STATUS_EVENT_TYPE[newStatus]) return;
+  await logDiaryEvent(newDiaryEvent({
+    type: SESSION_STATUS_EVENT_TYPE[newStatus], level: 'istanza', timestamp: getLocalDateString(),
+    operaId: opera.id, edizioneId, istanzaId, sessionId: session.id, title: opera.title,
+    authorNames: getOperaAuthors(opera), details: { from: oldStatus, to: newStatus },
+  }));
+}
+
+// Un'unica voce di Diario per Sessione riassume tutta l'attività di lettura registrata
+// (readingLog), aggiornata (non duplicata) ad ogni nuova registrazione di progresso — così
+// leggere spesso non produce decine di voci separate nel Diario.
+async function upsertReadingDiaryEvent(opera, edizioneId, istanzaId, session, unit) {
+  const log = session.readingLog;
+  if (!log || !log.length) return;
+  const sorted = [...log].sort((a, b) => a.date.localeCompare(b.date));
+  const dateStart = sorted[0].date, dateEnd = sorted[sorted.length - 1].date;
+  const totalRead = sorted.reduce((sum, l) => sum + (l.unitsRead || 0), 0);
+  const all = await dbGetAll(STORE_DIARIO);
+  let evt = all.find(e => e.type === 'reading' && e.sessionId === session.id);
+  const details = { dateStart, dateEnd, totalRead, unit };
+  if (evt) {
+    evt.details = details; evt.timestamp = dateEnd; evt.title = opera.title; evt.authorNames = getOperaAuthors(opera);
+  } else {
+    evt = newDiaryEvent({ type: 'reading', level: 'istanza', timestamp: dateEnd, operaId: opera.id, edizioneId,
+      istanzaId, sessionId: session.id, title: opera.title, authorNames: getOperaAuthors(opera), details });
+  }
+  await logDiaryEvent(evt);
+}
+
+// Migrazione idempotente: al primo avvio dopo l'introduzione del Diario, ricostruisce lo storico
+// retroattivo da ciò che è già ricavabile dai dati esistenti (createdAt di ogni livello, date di
+// inizio/fine sessione, readingLog). Le modifiche puntuali (rating, sinossi, ecc.) NON sono
+// ricostruibili perché updatedAt è un singolo timestamp e non uno storico: il Diario le registrerà
+// solo da qui in avanti. Gli eventi di stato "Sospeso"/"Abbandonato" retroattivi non hanno una data
+// certa (solo lo stato attuale è noto): vengono marcati "approx: true" e mostrati come tali in UI.
+const DIARIO_MIGRATION_FLAG = 'migration_diario_v1_completed';
+async function migrateDiaryRetroactiveIfNeeded() {
+  const alreadyDone = await getSetting(DIARIO_MIGRATION_FLAG, false);
+  if (alreadyDone) return;
+
+  const opere = await dbGetAll();
+  const authors = await dbGetAll(STORE_AUTORI);
+  const events = [];
+
+  for (const opera of opere) {
+    const authorNames = getOperaAuthors(opera);
+    events.push(newDiaryEvent({ type: 'created', level: 'opera', timestamp: opera.createdAt, operaId: opera.id, title: opera.title, authorNames }));
+    for (const ed of (opera.editions || [])) {
+      events.push(newDiaryEvent({ type: 'created', level: 'edizione', timestamp: ed.createdAt || opera.createdAt, operaId: opera.id, edizioneId: ed.id, title: opera.title, authorNames }));
+      for (const inst of (ed.instances || [])) {
+        events.push(newDiaryEvent({ type: 'created', level: 'istanza', timestamp: inst.createdAt || ed.createdAt, operaId: opera.id, edizioneId: ed.id, istanzaId: inst.id, title: opera.title, authorNames }));
+        for (const sess of (inst.sessions || [])) {
+          if (sess.startDate) {
+            events.push(newDiaryEvent({ type: 'started', level: 'istanza', timestamp: sess.startDate, operaId: opera.id, edizioneId: ed.id, istanzaId: inst.id, sessionId: sess.id, title: opera.title, authorNames, details: { to: 'In Lettura' } }));
+          }
+          if (sess.status === 'Completato') {
+            const ts = sess.endDate || inst.updatedAt || sess.startDate || opera.createdAt;
+            events.push(newDiaryEvent({ type: 'completed', level: 'istanza', timestamp: ts, approx: !sess.endDate, operaId: opera.id, edizioneId: ed.id, istanzaId: inst.id, sessionId: sess.id, title: opera.title, authorNames, details: { to: 'Completato' } }));
+          } else if (sess.status === 'Sospeso' || sess.status === 'Abbandonato') {
+            const ts = sess.endDate || inst.updatedAt || sess.startDate || opera.createdAt;
+            events.push(newDiaryEvent({ type: sess.status === 'Sospeso' ? 'suspended' : 'abandoned', level: 'istanza', timestamp: ts, approx: true, operaId: opera.id, edizioneId: ed.id, istanzaId: inst.id, sessionId: sess.id, title: opera.title, authorNames, details: { to: sess.status } }));
+          }
+          if (sess.readingLog && sess.readingLog.length) {
+            const sorted = [...sess.readingLog].sort((a, b) => a.date.localeCompare(b.date));
+            const totalRead = sorted.reduce((sum, l) => sum + (l.unitsRead || 0), 0);
+            events.push(newDiaryEvent({ type: 'reading', level: 'istanza', timestamp: sorted[sorted.length - 1].date, operaId: opera.id, edizioneId: ed.id, istanzaId: inst.id, sessionId: sess.id, title: opera.title, authorNames,
+              details: { dateStart: sorted[0].date, dateEnd: sorted[sorted.length - 1].date, totalRead, unit: inst.format === 'Audiobook' ? 'minuti' : 'pagine' } }));
+          }
+        }
+      }
+    }
+  }
+  for (const author of authors) {
+    events.push(newDiaryEvent({ type: 'created', level: 'author', timestamp: author.createdAt, authorId: author.id, title: author.name }));
+  }
+
+  for (const evt of events) await dbSave(evt, STORE_DIARIO);
+  await setSetting(DIARIO_MIGRATION_FLAG, true);
 }
 
 // --- PERIODO STORICO AUTORE (birthYear / periodTag) ---------------------------------------
@@ -1008,10 +1165,17 @@ function newAuthorSkeleton({ name, photoBase64 = '', biography = '', themes = ''
     nationalityTags: resolvedNationalityTags,
     createdAt: now, updatedAt: now };
 }
+const AUTHOR_DIARY_FIELDS = [
+  { key: 'biography', label: 'Biografia', kind: 'text' }, { key: 'themes', label: 'Tematiche', kind: 'text' },
+  { key: 'impact', label: 'Impatto letterario', kind: 'text' }, { key: 'birthYear', label: 'Anno di nascita' },
+  { key: 'nationalityTags', label: 'Nazionalità' }, { key: 'photoBase64', label: 'Foto', kind: 'text' },
+  { key: 'linkedOperaIds', label: 'Opere collegate' },
+];
 async function createAuthor(data) {
   const author = newAuthorSkeleton(data);
   await dbSave(author, STORE_AUTORI);
   await registerTagsInRegistry('nationalityTags', author.nationalityTags || []);
+  await logDiaryEvent(newDiaryEvent({ type: 'created', level: 'author', timestamp: author.createdAt, authorId: author.id, title: author.name }));
   return author;
 }
 async function updateAuthor(authorId, patch) {
@@ -1029,11 +1193,21 @@ async function updateAuthor(authorId, patch) {
   if (patch.nationalityTags !== undefined) {
     updated.nationalityTags = normalizeTagList(patch.nationalityTags);
   }
+  const changes = diffFields(author, updated, AUTHOR_DIARY_FIELDS);
   await dbSave(updated, STORE_AUTORI);
   await registerTagsInRegistry('nationalityTags', updated.nationalityTags || []);
+  if (changes.length) {
+    await logDiaryEvent(newDiaryEvent({ type: 'edited', level: 'author', timestamp: updated.updatedAt, authorId: updated.id, title: updated.name, changes }));
+  }
   return updated;
 }
-async function deleteAuthor(authorId) { return dbDelete(authorId, STORE_AUTORI); }
+async function deleteAuthor(authorId) {
+  const author = await dbGet(authorId, STORE_AUTORI);
+  if (author) {
+    await logDiaryEvent(newDiaryEvent({ type: 'deleted', level: 'author', timestamp: getLocalDateString(), title: author.name }));
+  }
+  return dbDelete(authorId, STORE_AUTORI);
+}
 async function getAllAuthors() {
   const list = await dbGetAll(STORE_AUTORI);
   return list.sort((a, b) => a.name.localeCompare(b.name, 'it'));
@@ -1050,14 +1224,27 @@ async function linkAuthorToOpera(authorId, operaId) {
     author.linkedOperaIds.push(operaId);
     author.updatedAt = new Date().toISOString();
     await dbSave(author, STORE_AUTORI);
+    const opera = await dbGet(operaId);
+    if (opera) {
+      await logDiaryEvent(newDiaryEvent({ type: 'edited', level: 'opera', timestamp: getLocalDateString(), operaId: opera.id, title: opera.title, authorNames: getOperaAuthors(opera),
+        changes: [{ label: 'Scheda autore', display: `Scheda autore collegata: ${author.name}` }] }));
+    }
   }
 }
 async function unlinkAuthorFromOpera(authorId, operaId) {
   const author = await dbGet(authorId, STORE_AUTORI);
   if (!author) return;
+  const wasLinked = (author.linkedOperaIds || []).includes(operaId);
   author.linkedOperaIds = (author.linkedOperaIds || []).filter(id => id !== operaId);
   author.updatedAt = new Date().toISOString();
   await dbSave(author, STORE_AUTORI);
+  if (wasLinked) {
+    const opera = await dbGet(operaId);
+    if (opera) {
+      await logDiaryEvent(newDiaryEvent({ type: 'edited', level: 'opera', timestamp: getLocalDateString(), operaId: opera.id, title: opera.title, authorNames: getOperaAuthors(opera),
+        changes: [{ label: 'Scheda autore', display: `Scheda autore scollegata: ${author.name}` }] }));
+    }
+  }
 }
 // Quando un'Opera viene eliminata, rimuove il collegamento da ogni scheda autore che la referenzia.
 async function unlinkOperaFromAllAuthors(operaId) {
@@ -1287,10 +1474,19 @@ function newOperaSkeleton({ title, authors = [], description = '', synopsis = ''
     subgenres: normalizeTagList(subgenres), microgenres: normalizeTagList(microgenres), modifiers: normalizeTagList(modifiers),
     createdAt: now, updatedAt: now, editions: [] };
 }
+const OPERA_DIARY_FIELDS = [
+  { key: 'description', label: 'Descrizione', kind: 'text' },
+  { key: 'synopsis', label: 'Sinossi', kind: 'text' },
+  { key: 'series', label: 'Serie' }, { key: 'seriesIndex', label: 'N. nella serie' },
+  { key: 'macro', label: 'Macro-genere' },
+  { key: 'subgenres', label: 'Sottogeneri' }, { key: 'microgenres', label: 'Micro-generi' }, { key: 'modifiers', label: 'Modificatori' },
+  { key: 'authors', label: 'Autori' },
+];
 async function createOpera(data) {
   const opera = newOperaSkeleton(data);
   await dbSave(opera);
   await Promise.all(TAXONOMY_LEVELS.map(level => registerTagsInRegistry(level, opera[level])));
+  await logDiaryEvent(newDiaryEvent({ type: 'created', level: 'opera', timestamp: opera.createdAt, operaId: opera.id, title: opera.title, authorNames: getOperaAuthors(opera) }));
   return opera;
 }
 async function updateOpera(operaId, patch) {
@@ -1299,12 +1495,20 @@ async function updateOpera(operaId, patch) {
   ['subgenres', 'microgenres', 'modifiers'].forEach(key => { if (patch[key]) patch[key] = normalizeTagList(patch[key]); });
   if (patch.authors) patch.authors = parseAuthorsList(patch.authors);
   const updated = { ...opera, ...patch, id: opera.id, editions: opera.editions, updatedAt: getLocalDateString() };
+  const changes = diffFields(opera, updated, OPERA_DIARY_FIELDS);
   await dbSave(updated);
   await Promise.all(TAXONOMY_LEVELS.map(level => registerTagsInRegistry(level, updated[level])));
+  if (changes.length) {
+    await logDiaryEvent(newDiaryEvent({ type: 'edited', level: 'opera', timestamp: updated.updatedAt, operaId: updated.id, title: updated.title, authorNames: getOperaAuthors(updated), changes }));
+  }
   return updated;
 }
 async function deleteOpera(operaId) {
+  const opera = await dbGet(operaId);
   await unlinkOperaFromAllAuthors(operaId);
+  if (opera) {
+    await logDiaryEvent(newDiaryEvent({ type: 'deleted', level: 'opera', timestamp: getLocalDateString(), operaId: null, title: opera.title, authorNames: getOperaAuthors(opera) }));
+  }
   return dbDelete(operaId);
 }
 
@@ -1313,22 +1517,39 @@ function newEditionSkeleton({ publisher = '', year = null, language = 'Italiano'
   const now = getLocalDateString();
   return { id: uid('ed'), publisher, year, language, description, alternateTitle, createdAt: now, updatedAt: now, instances: [] };
 }
+const EDITION_DIARY_FIELDS = [
+  { key: 'publisher', label: 'Editore' }, { key: 'year', label: 'Anno' }, { key: 'language', label: 'Lingua' },
+  { key: 'description', label: 'Note edizione', kind: 'text' }, { key: 'alternateTitle', label: 'Titolo alternativo' },
+];
 async function addEdition(operaId, data) {
   const opera = await dbGet(operaId);
   if (!opera) throw new Error('Opera non trovata: ' + operaId);
   const edition = newEditionSkeleton(data);
-  opera.editions.push(edition); await dbSave(opera); return edition;
+  opera.editions.push(edition); await dbSave(opera);
+  await logDiaryEvent(newDiaryEvent({ type: 'created', level: 'edizione', timestamp: edition.createdAt, operaId: opera.id, edizioneId: edition.id, title: opera.title, authorNames: getOperaAuthors(opera) }));
+  return edition;
 }
 async function updateEdition(operaId, editionId, patch) {
   const opera = await dbGet(operaId);
   const edition = opera?.editions.find(e => e.id === editionId);
   if (!edition) throw new Error('Edizione non trovata: ' + editionId);
-  Object.assign(edition, patch, { updatedAt: getLocalDateString() }); await dbSave(opera); return edition;
+  const before = { ...edition };
+  Object.assign(edition, patch, { updatedAt: getLocalDateString() });
+  const changes = diffFields(before, edition, EDITION_DIARY_FIELDS);
+  await dbSave(opera);
+  if (changes.length) {
+    await logDiaryEvent(newDiaryEvent({ type: 'edited', level: 'edizione', timestamp: edition.updatedAt, operaId: opera.id, edizioneId: edition.id, title: opera.title, authorNames: getOperaAuthors(opera), changes }));
+  }
+  return edition;
 }
 async function deleteEdition(operaId, editionId) {
   const opera = await dbGet(operaId);
   if (!opera) throw new Error('Opera non trovata: ' + operaId);
+  const edition = opera.editions.find(e => e.id === editionId);
   opera.editions = opera.editions.filter(e => e.id !== editionId); await dbSave(opera);
+  if (edition) {
+    await logDiaryEvent(newDiaryEvent({ type: 'deleted', level: 'edizione', timestamp: getLocalDateString(), operaId: opera.id, title: opera.title, authorNames: getOperaAuthors(opera) }));
+  }
 }
 
 // Sposta un'Edizione (con tutte le sue Istanze annidate) da un'Opera a un'altra.
@@ -1376,24 +1597,43 @@ function newInstanceSkeleton({ ownership = 'owned', format = 'E-book', isbn = ''
   return { id: uid('inst'), ownership, format, isbn, rating, location, description, coverBase64,
     totalPages, totalMinutes, collanaEditoriale, numeroCollana, createdAt: now, updatedAt: now, sessions: [] };
 }
+const INSTANCE_DIARY_FIELDS = [
+  { key: 'rating', label: 'Valutazione', kind: 'rating' },
+  { key: 'ownership', label: 'Possesso' }, { key: 'format', label: 'Formato' }, { key: 'location', label: 'Posizione' },
+  { key: 'description', label: 'Note copia', kind: 'text' },
+  { key: 'collanaEditoriale', label: 'Collana' }, { key: 'numeroCollana', label: 'N. collana' },
+  { key: 'totalPages', label: 'Pagine totali' }, { key: 'totalMinutes', label: 'Minuti totali' },
+];
 async function addInstance(operaId, editionId, data) {
   const opera = await dbGet(operaId);
   const edition = opera?.editions.find(e => e.id === editionId);
   if (!edition) throw new Error('Edizione non trovata: ' + editionId);
   const instance = newInstanceSkeleton(data);
-  edition.instances.push(instance); await dbSave(opera); return instance;
+  edition.instances.push(instance); await dbSave(opera);
+  await logDiaryEvent(newDiaryEvent({ type: 'created', level: 'istanza', timestamp: instance.createdAt, operaId: opera.id, edizioneId: editionId, istanzaId: instance.id, title: opera.title, authorNames: getOperaAuthors(opera) }));
+  return instance;
 }
 async function updateInstance(operaId, editionId, instanceId, patch) {
   const opera = await dbGet(operaId);
   const instance = findInstance(opera, editionId, instanceId);
   if (!instance) throw new Error('Istanza non trovata: ' + instanceId);
-  Object.assign(instance, patch, { updatedAt: getLocalDateString() }); await dbSave(opera); return instance;
+  const before = { ...instance };
+  Object.assign(instance, patch, { updatedAt: getLocalDateString() });
+  const changes = diffFields(before, instance, INSTANCE_DIARY_FIELDS);
+  await dbSave(opera);
+  if (changes.length) {
+    await logDiaryEvent(newDiaryEvent({ type: 'edited', level: 'istanza', timestamp: instance.updatedAt, operaId: opera.id, edizioneId: editionId, istanzaId: instance.id, title: opera.title, authorNames: getOperaAuthors(opera), changes }));
+  }
+  return instance;
 }
 async function deleteInstance(operaId, editionId, instanceId) {
   const opera = await dbGet(operaId);
   const edition = opera?.editions.find(e => e.id === editionId);
   if (!edition) throw new Error('Edizione non trovata: ' + editionId);
   edition.instances = edition.instances.filter(i => i.id !== instanceId); await dbSave(opera);
+  if (opera) {
+    await logDiaryEvent(newDiaryEvent({ type: 'deleted', level: 'istanza', timestamp: getLocalDateString(), operaId: opera.id, title: opera.title, authorNames: getOperaAuthors(opera) }));
+  }
 }
 
 // --- SESSIONI DI LETTURA/ASCOLTO -------------------------------------------------------------
@@ -1439,7 +1679,10 @@ async function updateSessionStatus(operaId, editionId, instanceId, sessionId, st
   const instance = findInstance(opera, editionId, instanceId);
   const session = instance.sessions.find(s => s.id === sessionId);
   if (!session) throw new Error('Sessione non trovata: ' + sessionId);
-  session.status = status; instance.updatedAt = getLocalDateString(); await dbSave(opera); return session;
+  const oldStatus = session.status;
+  session.status = status; instance.updatedAt = getLocalDateString(); await dbSave(opera);
+  await logSessionStatusChange(opera, editionId, instanceId, session, oldStatus, status);
+  return session;
 }
 async function updateSessionDates(operaId, editionId, instanceId, sessionId, { startDate, endDate }) {
   const opera = await dbGet(operaId);
@@ -1491,9 +1734,13 @@ async function setSessionProgressAbsolute(operaId, editionId, instanceId, sessio
   const instance = findInstance(opera, editionId, instanceId);
   const session = instance.sessions.find(s => s.id === sessionId);
   if (!session) throw new Error('Sessione non trovata: ' + sessionId);
+  const oldStatus = session.status;
   const totalUnit = getInstanceTotalUnit(instance);
   applyProgressToSession(session, totalUnit, Math.max(0, Math.round(reachedUnit)));
-  instance.updatedAt = getLocalDateString(); await dbSave(opera); return session;
+  instance.updatedAt = getLocalDateString(); await dbSave(opera);
+  await logSessionStatusChange(opera, editionId, instanceId, session, oldStatus, session.status);
+  await upsertReadingDiaryEvent(opera, editionId, instanceId, session, instance.format === 'Audiobook' ? 'minuti' : 'pagine');
+  return session;
 }
 async function updateLogEntryDate(operaId, editionId, instanceId, sessionId, oldDate, newDate) {
   const opera = await dbGet(operaId);
@@ -1512,7 +1759,9 @@ async function updateLogEntryDate(operaId, editionId, instanceId, sessionId, old
   }
   session.readingLog.sort((a, b) => a.date.localeCompare(b.date));
   instance.updatedAt = getLocalDateString();
-  await dbSave(opera); return session;
+  await dbSave(opera);
+  await upsertReadingDiaryEvent(opera, editionId, instanceId, session, instance.format === 'Audiobook' ? 'minuti' : 'pagine');
+  return session;
 }
 
 /* =====================================================================================
@@ -1772,10 +2021,12 @@ const ICON_CATALOGO = '<svg viewBox="0 0 24 24" class="w-full h-full" xmlns="htt
 const ICON_TASSONOMIA = '<svg viewBox="0 0 24 24" class="w-full h-full" xmlns="http://www.w3.org/2000/svg"><path d="M12.6 2.6 21 11a2 2 0 0 1 0 2.8l-6.6 6.6a2 2 0 0 1-2.8 0L3 11.8V4.6A2 2 0 0 1 5 2.6Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><circle cx="7.4" cy="7.4" r="1.3" fill="currentColor"/></svg>';
 const ICON_IMPOSTAZIONI = '<svg viewBox="0 0 24 24" class="w-full h-full" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 2.5v3M12 18.5v3M4.5 4.5l2.1 2.1M17.4 17.4l2.1 2.1M2.5 12h3M18.5 12h3M4.5 19.5l2.1-2.1M17.4 6.6l2.1-2.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
 const ICON_AUTORI = '<svg viewBox="0 0 24 24" class="w-full h-full" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="8" r="3.4" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M4.5 20c0-3.6 3.4-6.2 7.5-6.2s7.5 2.6 7.5 6.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+const ICON_DIARIO = '<svg viewBox="0 0 24 24" class="w-full h-full" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.5V12l3.2 2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 const SECTIONS = [
   { key: 'catalogo',     icon: ICON_CATALOGO,     label: 'Catalogo' },
   { key: 'autori',       icon: ICON_AUTORI,       label: 'Autori' },
+  { key: 'diario',       icon: ICON_DIARIO,       label: 'Diario' },
   { key: 'tassonomia',   icon: ICON_TASSONOMIA,   label: 'Tassonomia' },
   { key: 'impostazioni', icon: ICON_IMPOSTAZIONI, label: 'Impostazioni' },
 ];
@@ -1976,6 +2227,7 @@ async function renderFiltersPanels() {
   let html;
   if (currentSection === 'catalogo') html = await renderFiltersPanel();
   else if (currentSection === 'autori') html = await renderAuthorFiltersPanel();
+  else if (currentSection === 'diario') html = await renderDiaryFiltersPanel();
   else html = `<p class="ui-muted text-xs">Nessun filtro disponibile per questa sezione.</p>`;
   document.getElementById('sidebar-filters-slot').innerHTML = html;
   document.getElementById('drawer-filters-slot').innerHTML = html;
@@ -2052,11 +2304,12 @@ function switchSection(key) {
   updateNavActiveState();
   // Il tasto "☰ Filtri" (mobile) apre lo stesso drawer per qualunque sezione filtrabile;
   // resta nascosto per le sezioni che non hanno filtri (Tassonomia, Impostazioni, ecc.).
-  document.getElementById('drawer-toggle-btn').classList.toggle('invisible', !['catalogo', 'autori'].includes(key));
+  document.getElementById('drawer-toggle-btn').classList.toggle('invisible', !['catalogo', 'autori', 'diario'].includes(key));
   closeDrawer();
   renderFiltersPanels();
   if (key === 'tassonomia') renderTassonomia();
   if (key === 'autori') renderAutori();
+  if (key === 'diario') renderDiario();
 }
 
 function openDrawer() {
@@ -2167,6 +2420,7 @@ async function initApp() {
     await refreshAuthorCardCache();
     await migratePeriodTagsIfNeeded();
     await migrateNationalityTagsIfNeeded();
+    await migrateDiaryRetroactiveIfNeeded();
     await refreshTagDatalists();
 
     renderNav('nav-desktop-slot', { vertical: true });
@@ -2325,6 +2579,7 @@ async function saveOperaFromForm() {
   closeModal('modal-opera');
   await renderCatalogo();
   if (currentSection === 'autori') await renderAutori();
+  if (currentSection === 'diario') await renderDiario();
 }
 
 async function deleteOperaFromModal() {
@@ -2542,6 +2797,281 @@ function renderAuthorPaginationControls(totalPages) {
   el.innerHTML = `<div class="flex flex-wrap items-center justify-center gap-2 w-full">${numbered}</div>`;
 }
 
+// --- DIARIO (UI) ----------------------------------------------------------------------------
+let diaryFilters = { types: [], author: '', dateFrom: '', dateTo: '' };
+let diaryPageSize = 25; // 10 | 25 | 50 | 'all'
+let diaryPage = 1;
+
+async function toggleDiaryTypeFilter(type) {
+  const idx = diaryFilters.types.indexOf(type);
+  if (idx === -1) diaryFilters.types.push(type); else diaryFilters.types.splice(idx, 1);
+  diaryPage = 1;
+  await renderFiltersPanels();
+  await renderDiario();
+}
+async function setDiaryAuthorFilter(value) {
+  diaryFilters.author = value;
+  diaryPage = 1;
+  document.querySelectorAll('.diary-author-input').forEach(el => { if (el.value !== value) el.value = value; });
+  await renderDiario();
+}
+async function setDiaryDateFilter(key, value) {
+  diaryFilters[key] = value;
+  diaryPage = 1;
+  document.querySelectorAll(`.diary-${key}-input`).forEach(el => { if (el.value !== value) el.value = value; });
+  await renderDiario();
+}
+async function setDiaryPageSize(value) {
+  diaryPageSize = value === 'all' ? 'all' : Number(value);
+  diaryPage = 1;
+  document.querySelectorAll('.diary-pagesize-select').forEach(el => el.value = value);
+  await renderDiario();
+}
+async function goToDiaryPage(page) {
+  diaryPage = page;
+  await renderDiario();
+  const list = document.getElementById('diario-list');
+  if (list && typeof list.scrollIntoView === 'function') list.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+async function resetDiaryFilters() {
+  diaryFilters = { types: [], author: '', dateFrom: '', dateTo: '' };
+  diaryPage = 1;
+  document.querySelectorAll('.diary-author-input').forEach(el => el.value = '');
+  document.querySelectorAll('.diary-dateFrom-input').forEach(el => el.value = '');
+  document.querySelectorAll('.diary-dateTo-input').forEach(el => el.value = '');
+  await renderFiltersPanels();
+  await renderDiario();
+}
+
+async function renderDiaryFiltersPanel() {
+  return `
+    <p class="text-[10px] font-bold uppercase tracking-wider ui-accent-text mb-2">Filtri Diario</p>
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Tipo di evento</p>
+    <div class="flex flex-wrap gap-1 mb-3">
+      ${Object.entries(DIARY_EVENT_META).map(([type, meta]) => pillButton(`${meta.icon} ${meta.label}`, diaryFilters.types.includes(type), `toggleDiaryTypeFilter('${type}')`)).join('')}
+    </div>
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Autore</p>
+    <input type="text" placeholder="Nome autore..." value="${diaryFilters.author}" oninput="setDiaryAuthorFilter(this.value)"
+      class="diary-author-input ui-input w-full p-2 rounded-lg border text-xs mb-3">
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Intervallo date</p>
+    <div class="flex items-center gap-2 mb-3">
+      <input type="date" value="${diaryFilters.dateFrom}" onchange="setDiaryDateFilter('dateFrom', this.value)" class="diary-dateFrom-input ui-input flex-1 p-2 rounded-lg border text-xs">
+      <span class="ui-muted text-[11px]">→</span>
+      <input type="date" value="${diaryFilters.dateTo}" onchange="setDiaryDateFilter('dateTo', this.value)" class="diary-dateTo-input ui-input flex-1 p-2 rounded-lg border text-xs">
+    </div>
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Eventi per pagina</p>
+    <select onchange="setDiaryPageSize(this.value)" class="diary-pagesize-select ui-input w-full p-2 rounded-lg border text-xs mb-3">
+      <option value="10" ${diaryPageSize === 10 ? 'selected' : ''}>10 per pagina</option>
+      <option value="25" ${diaryPageSize === 25 ? 'selected' : ''}>25 per pagina</option>
+      <option value="50" ${diaryPageSize === 50 ? 'selected' : ''}>50 per pagina</option>
+      <option value="all" ${diaryPageSize === 'all' ? 'selected' : ''}>Tutti</option>
+    </select>
+
+    <button type="button" onclick="resetDiaryFilters()" class="ui-btn-sec w-full py-2 rounded-lg text-xs font-semibold">✕ Azzera filtri</button>
+  `;
+}
+
+// Copertina "in evidenza" per un evento: quella dell'Istanza coinvolta se ne ha una, altrimenti
+// la prima copertina disponibile nella stessa Edizione/Opera — così un evento a livello Opera
+// (es. "sinossi modificata") mostra comunque una copertina se il libro ne ha almeno una.
+function resolveEventCover(evt, opereMap) {
+  const opera = evt.operaId ? opereMap.get(evt.operaId) : null;
+  if (!opera) return null;
+  if (evt.edizioneId) {
+    const ed = opera.editions.find(e => e.id === evt.edizioneId);
+    if (ed) {
+      if (evt.istanzaId) {
+        const inst = ed.instances.find(i => i.id === evt.istanzaId);
+        if (inst && inst.coverBase64) return inst.coverBase64;
+      }
+      const withCover = ed.instances.find(i => i.coverBase64);
+      if (withCover) return withCover.coverBase64;
+    }
+  }
+  for (const ed of opera.editions) {
+    const withCover = ed.instances.find(i => i.coverBase64);
+    if (withCover) return withCover.coverBase64;
+  }
+  return null;
+}
+
+function diaryDayHeaderLabel(day) {
+  if (!day) return 'Data sconosciuta';
+  const today = getLocalDateString();
+  const yesterday = getLocalDateString(new Date(Date.now() - 86400000));
+  if (day === today) return 'Oggi';
+  if (day === yesterday) return 'Ieri';
+  const d = new Date(day + 'T00:00:00');
+  if (isNaN(d.getTime())) return day;
+  const label = d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function diaryEventSummaryLine(evt) {
+  const levelLabel = DIARY_LEVEL_LABEL[evt.level] || '';
+  switch (evt.type) {
+    case 'created':
+      if (evt.level === 'opera') return 'Aggiunta al catalogo';
+      if (evt.level === 'edizione') return 'Nuova edizione aggiunta';
+      if (evt.level === 'istanza') return 'Nuova copia aggiunta';
+      if (evt.level === 'author') return 'Nuova scheda autore creata';
+      return 'Aggiunto';
+    case 'deleted': return `${levelLabel} eliminata`;
+    case 'started': return 'Lettura iniziata';
+    case 'completed': return 'Lettura completata';
+    case 'suspended': return 'Lettura sospesa';
+    case 'abandoned': return 'Lettura abbandonata';
+    case 'reading': {
+      const d = evt.details || {};
+      const range = d.dateStart === d.dateEnd ? `il ${formatItDate(d.dateStart)}` : `tra il ${formatItDate(d.dateStart)} e il ${formatItDate(d.dateEnd)}`;
+      return `Letti ${d.totalRead} ${d.unit || ''} ${range}`;
+    }
+    case 'edited': return (evt.changes || []).map(c => c.display).join(' · ') || 'Modificato';
+    default: return (DIARY_EVENT_META[evt.type] || {}).label || '';
+  }
+}
+
+function diaryEventCardHtml(evt, opereMap, authorMapById) {
+  const meta = DIARY_EVENT_META[evt.type] || { icon: '•', label: evt.type };
+  const opera = evt.operaId ? opereMap.get(evt.operaId) : null;
+  const author = evt.authorId ? authorMapById.get(evt.authorId) : null;
+  const isAuthorLevel = evt.level === 'author';
+  const displayTitle = isAuthorLevel ? evt.title : (opera ? opera.title : evt.title);
+  const cover = isAuthorLevel ? (author?.photoBase64 || '') : (resolveEventCover(evt, opereMap) || '');
+  const authorLine = isAuthorLevel ? '' : formatAuthorsDisplay(evt.authorNames || []);
+  const synopsis = !isAuthorLevel && opera ? (opera.synopsis || '') : '';
+  const description = !isAuthorLevel && opera ? (opera.description || '') : '';
+  const bio = isAuthorLevel && author ? (author.biography || '') : '';
+
+  const coverHtml = cover
+    ? `<img src="${cover}" class="w-12 h-16 rounded-lg object-cover shrink-0">`
+    : `<div class="w-12 h-16 rounded-lg ui-btn-sec flex items-center justify-center text-lg shrink-0">${isAuthorLevel ? '👤' : '📕'}</div>`;
+
+  let titleHtml;
+  if (!isAuthorLevel && opera) {
+    titleHtml = `<button type="button" onclick="openOperaModal('${opera.id}')" class="font-bold text-sm text-left hover:underline truncate">${displayTitle}</button>`;
+  } else if (isAuthorLevel && author) {
+    titleHtml = `<button type="button" onclick="openAuthorModal('${evt.authorId}')" class="font-bold text-sm text-left hover:underline truncate">${displayTitle}</button>`;
+  } else {
+    titleHtml = `<span class="font-bold text-sm truncate opacity-60">${displayTitle || '(senza titolo)'}${evt.type !== 'deleted' ? ' — eliminata/o' : ''}</span>`;
+  }
+
+  const approxNote = evt.approx ? `<span class="ui-muted text-[10px] italic ml-1">(data stimata)</span>` : '';
+  const extraLabel = bio ? 'Biografia' : (synopsis ? 'Sinossi' : 'Descrizione');
+  const extraText = (bio || synopsis || description || '').slice(0, 600);
+  const extra = extraText
+    ? `<details class="mt-1">
+        <summary class="text-[10px] ui-accent-text font-semibold cursor-pointer select-none">${extraLabel}</summary>
+        <p class="ui-muted text-[11px] mt-1 whitespace-pre-line">${extraText}</p>
+      </details>`
+    : '';
+
+  return `
+    <div class="ui-card border rounded-2xl p-3 flex gap-3">
+      ${coverHtml}
+      <div class="min-w-0 flex-1">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0">
+            ${titleHtml}
+            ${authorLine ? `<p class="ui-muted text-[11px] truncate">${authorLine}</p>` : ''}
+          </div>
+          <span class="text-[10px] ui-btn-sec px-1.5 py-0.5 rounded-md shrink-0 whitespace-nowrap">${meta.icon} ${DIARY_LEVEL_LABEL[evt.level] || ''}</span>
+        </div>
+        <p class="text-xs mt-1">${diaryEventSummaryLine(evt)}${approxNote}</p>
+        ${extra}
+      </div>
+    </div>`;
+}
+
+function diaryDayHeaderHtml(day) {
+  return `<p class="ui-muted text-[11px] font-bold uppercase tracking-wider mt-2 mb-1 pl-1">${diaryDayHeaderLabel(day)}</p>`;
+}
+
+async function renderDiario() {
+  const container = document.getElementById('diario-list');
+  if (!container) return;
+
+  const [events, opereList, authorList] = await Promise.all([dbGetAll(STORE_DIARIO), dbGetAll(), getAllAuthors()]);
+  const opereMap = new Map(opereList.map(o => [o.id, o]));
+  const authorMapById = new Map(authorList.map(a => [a.id, a]));
+
+  let filtered = events;
+  if (diaryFilters.types.length) filtered = filtered.filter(e => diaryFilters.types.includes(e.type));
+  if (diaryFilters.author.trim()) {
+    const q = diaryFilters.author.trim().toLowerCase();
+    filtered = filtered.filter(e => (e.authorNames || []).some(n => n.toLowerCase().includes(q)) || (e.level === 'author' && (e.title || '').toLowerCase().includes(q)));
+  }
+  if (diaryFilters.dateFrom) filtered = filtered.filter(e => (e.timestamp || '').slice(0, 10) >= diaryFilters.dateFrom);
+  if (diaryFilters.dateTo) filtered = filtered.filter(e => (e.timestamp || '').slice(0, 10) <= diaryFilters.dateTo);
+
+  filtered = [...filtered].sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || '') || String(b.id).localeCompare(String(a.id)));
+
+  const countEl = document.getElementById('diario-count');
+  const hasActiveFilters = diaryFilters.types.length || diaryFilters.author.trim() || diaryFilters.dateFrom || diaryFilters.dateTo;
+  if (countEl) countEl.textContent = hasActiveFilters ? `${filtered.length} eventi trovati su ${events.length} totali` : `${events.length} eventi nel Diario`;
+
+  const paginationEl = document.getElementById('diario-pagination');
+
+  if (!events.length) {
+    container.innerHTML = `
+      <div class="ui-card border rounded-2xl p-8 text-center">
+        <p class="text-3xl mb-2">📔</p>
+        <p class="font-semibold mb-1">Il Diario è ancora vuoto</p>
+        <p class="ui-muted text-sm">Inizia ad aggiungere Opere e registrare le tue letture: appariranno qui in ordine cronologico.</p>
+      </div>`;
+    if (paginationEl) paginationEl.innerHTML = '';
+    return;
+  }
+  if (!filtered.length) {
+    container.innerHTML = `
+      <div class="ui-card border rounded-2xl p-8 text-center">
+        <p class="text-3xl mb-2">🔍</p>
+        <p class="font-semibold mb-1">Nessun evento corrisponde ai filtri</p>
+        <p class="ui-muted text-sm">Prova ad azzerare i filtri dal pannello "☰ Filtri".</p>
+      </div>`;
+    if (paginationEl) paginationEl.innerHTML = '';
+    return;
+  }
+
+  const pageSize = diaryPageSize === 'all' ? filtered.length : diaryPageSize;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  diaryPage = Math.min(Math.max(1, diaryPage), totalPages);
+  const startIdx = (diaryPage - 1) * pageSize;
+  const pageItems = diaryPageSize === 'all' ? filtered : filtered.slice(startIdx, startIdx + pageSize);
+
+  let html = '';
+  let lastDay = null;
+  for (const evt of pageItems) {
+    const day = (evt.timestamp || '').slice(0, 10);
+    if (day !== lastDay) { html += diaryDayHeaderHtml(day); lastDay = day; }
+    html += diaryEventCardHtml(evt, opereMap, authorMapById);
+  }
+  container.innerHTML = html;
+  renderDiaryPaginationControls(totalPages);
+}
+
+function renderDiaryPaginationControls(totalPages) {
+  const el = document.getElementById('diario-pagination');
+  if (!el) return;
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+
+  const maxButtons = window.innerWidth < 768 ? 5 : 7;
+  let startP = Math.max(1, diaryPage - Math.floor(maxButtons / 2));
+  let endP = Math.min(totalPages, startP + maxButtons - 1);
+  startP = Math.max(1, endP - maxButtons + 1);
+  let numbered = `<button onclick="goToDiaryPage(${Math.max(1, diaryPage - 1)})" ${diaryPage === 1 ? 'disabled' : ''} class="ui-btn-sec w-8 h-8 rounded-lg text-xs font-bold ${diaryPage === 1 ? 'opacity-30' : ''}">‹</button>`;
+  for (let p = startP; p <= endP; p++) {
+    numbered += `<button onclick="goToDiaryPage(${p})" class="w-8 h-8 rounded-lg text-xs font-bold ${p === diaryPage ? 'ui-accent-bg text-white' : 'ui-btn-sec'}">${p}</button>`;
+  }
+  numbered += `<button onclick="goToDiaryPage(${Math.min(totalPages, diaryPage + 1)})" ${diaryPage === totalPages ? 'disabled' : ''} class="ui-btn-sec w-8 h-8 rounded-lg text-xs font-bold ${diaryPage === totalPages ? 'opacity-30' : ''}">›</button>`;
+
+  el.innerHTML = `<div class="flex flex-wrap items-center justify-center gap-2 w-full">${numbered}</div>`;
+}
+
 function setAuthorPhotoPreview(base64) {
   authorPhotoPreviewBase64 = base64 || '';
   const wrap = document.getElementById('author-photo-preview-wrap');
@@ -2675,6 +3205,7 @@ async function saveAuthorFromForm() {
   await renderAutori();
   await refreshOperaAuthorLinks();
   if (currentSection === 'catalogo') await renderCatalogo();
+  if (currentSection === 'diario') await renderDiario();
 }
 
 async function deleteAuthorFromModal() {
@@ -2687,6 +3218,7 @@ async function deleteAuthorFromModal() {
   await renderAutori();
   await refreshOperaAuthorLinks();
   if (currentSection === 'catalogo') await renderCatalogo();
+  if (currentSection === 'diario') await renderDiario();
 }
 
 // --- EDIZIONE ----------------------------------------------------------------------------
@@ -2744,6 +3276,7 @@ async function saveEditionFromForm() {
   if (editionId) { await updateEdition(operaId, editionId, data); } else { await addEdition(operaId, data); }
   closeModal('modal-edition');
   await renderCatalogo();
+  if (currentSection === 'diario') await renderDiario();
 }
 
 async function deleteEditionFromModal() {
@@ -2754,6 +3287,7 @@ async function deleteEditionFromModal() {
   await deleteEdition(operaId, editionId);
   closeModal('modal-edition');
   await renderCatalogo();
+  if (currentSection === 'diario') await renderDiario();
 }
 
 async function onEditionMoveSearch(query) {
@@ -2967,6 +3501,7 @@ async function saveInstanceFromForm() {
   else { await addInstance(operaId, editionId, data); }
   closeModal('modal-instance');
   await renderCatalogo();
+  if (currentSection === 'diario') await renderDiario();
 }
 
 async function deleteInstanceFromModal() {
@@ -2978,6 +3513,7 @@ async function deleteInstanceFromModal() {
   await deleteInstance(operaId, editionId, instanceId);
   closeModal('modal-instance');
   await renderCatalogo();
+  if (currentSection === 'diario') await renderDiario();
 }
 
 async function moveInstanceToEditionFromModal(targetEditionId) {
@@ -3097,6 +3633,7 @@ async function onSessionStatusChange(sessionId, status) {
   const instanceId = document.getElementById('instance-id').value;
   await updateSessionStatus(operaId, editionId, instanceId, sessionId, status);
   await renderCatalogo();
+  if (currentSection === 'diario') await renderDiario();
 }
 
 async function onSessionDateChange(sessionId, field, value) {
@@ -3118,6 +3655,7 @@ async function onSessionPercentChange(sessionId, percent) {
   await setSessionProgressAbsolute(operaId, editionId, instanceId, sessionId, reachedUnit);
   await renderInstanceSessions();
   await renderCatalogo();
+  if (currentSection === 'diario') await renderDiario();
 }
 
 // Feedback in tempo reale mentre si trascina lo slider o si digita il numero, senza scrivere
@@ -3153,6 +3691,7 @@ async function setAbsoluteFromModal(sessionId) {
   await setSessionProgressAbsolute(operaId, editionId, instanceId, sessionId, value);
   await renderInstanceSessions();
   await renderCatalogo();
+  if (currentSection === 'diario') await renderDiario();
 }
 
 async function onLogDateChange(sessionId, oldDate, newDate) {
@@ -3161,6 +3700,7 @@ async function onLogDateChange(sessionId, oldDate, newDate) {
   const instanceId = document.getElementById('instance-id').value;
   await updateLogEntryDate(operaId, editionId, instanceId, sessionId, oldDate, newDate);
   await renderInstanceSessions();
+  if (currentSection === 'diario') await renderDiario();
 }
 
 // --- RENDER CATALOGO (nessun filtro/ricerca: arrivano al Punto 4) ------------------------
@@ -3942,10 +4482,11 @@ async function clearStore(name) {
 async function buildExportPayload() {
   const opere = await dbGetAll('opere');
   const autori = await dbGetAll(STORE_AUTORI);
+  const diario = await dbGetAll(STORE_DIARIO);
   const settingsRecords = await dbGetAll('settings');
   const settings = {};
   settingsRecords.forEach(s => { settings[s.key] = s.value; });
-  return { app: 'Opera Codex', exportVersion: 2, exportDate: getLocalDateString(), opere, autori, settings };
+  return { app: 'Opera Codex', exportVersion: 3, exportDate: getLocalDateString(), opere, autori, diario, settings };
 }
 
 // --- EXPORT/IMPORT DEDICATO ALLE SOLE SCHEDE AUTORE -----------------------------------------
@@ -4038,6 +4579,7 @@ async function importAuthorsFromObject(data) {
   await renderAutori();
   await refreshOperaAuthorLinks();
   if (currentSection === 'catalogo') await renderCatalogo();
+  if (currentSection === 'diario') await renderDiario();
   alert(`Import schede autori completato: ${added} aggiunte, ${updated} aggiornate.`);
   return true;
 }
@@ -4222,12 +4764,22 @@ async function importDatabaseFromObject(data) {
   await clearStore('opere');
   await clearStore('settings');
   await clearStore(STORE_AUTORI);
+  await clearStore(STORE_DIARIO);
   for (const opera of data.opere) { await dbSave(opera, 'opere'); }
   if (Array.isArray(data.autori)) {
     for (const author of data.autori) { await dbSave(author, STORE_AUTORI); }
   }
   if (data.settings && typeof data.settings === 'object') {
     for (const [key, value] of Object.entries(data.settings)) { await setSetting(key, value); }
+  }
+  // Backup vecchi (prima del Diario) non hanno "diario": lo ricostruiamo retroattivamente dai
+  // dati appena importati, invece di lasciarlo vuoto. Backup più recenti lo portano già con sé.
+  if (Array.isArray(data.diario)) {
+    for (const evt of data.diario) { await dbSave(evt, STORE_DIARIO); }
+    await setSetting(DIARIO_MIGRATION_FLAG, true);
+  } else {
+    await setSetting(DIARIO_MIGRATION_FLAG, false);
+    await migrateDiaryRetroactiveIfNeeded();
   }
 
   await reloadAppStateAfterImport();
@@ -4249,6 +4801,7 @@ async function resetEntireDatabase() {
   await clearStore('opere');
   await clearStore('settings');
   await clearStore(STORE_AUTORI);
+  await clearStore(STORE_DIARIO);
   await reloadAppStateAfterImport();
   alert('Database azzerato: sei ripartito da zero.');
 }
@@ -4284,6 +4837,7 @@ async function reloadAppStateAfterImport() {
   await renderCatalogo();
   if (currentSection === 'tassonomia') await renderTassonomia();
   if (currentSection === 'autori') await renderAutori();
+  if (currentSection === 'diario') await renderDiario();
 }
 
 /* =====================================================================================
