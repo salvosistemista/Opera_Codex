@@ -863,6 +863,7 @@ function newDiaryEvent({ type, level, timestamp, operaId = null, edizioneId = nu
     sessionId, authorId, title, authorNames: [...authorNames], changes, details, approx };
 }
 async function logDiaryEvent(evt) { return dbSave(evt, STORE_DIARIO); }
+async function deleteDiaryEvent(eventId) { return dbDelete(eventId, STORE_DIARIO); }
 
 // Confronta un sottoinsieme di campi tra vecchio e nuovo record e produce una lista di "changes"
 // leggibili per l'evento 'edited'. I campi di testo lungo (sinossi, descrizioni, biografia) non
@@ -2984,11 +2985,19 @@ function diaryEventCardHtml(evt, opereMap, authorMapById) {
         <p class="text-xs mt-1">${diaryEventSummaryLine(evt)}${approxNote}</p>
         ${extra}
       </div>
+      <button type="button" onclick="confirmDeleteDiaryEvent('${evt.id}')" title="Rimuovi dal Diario"
+        class="text-red-500/70 hover:text-red-500 text-xs font-bold w-6 h-6 shrink-0 flex items-center justify-center self-start">✕</button>
     </div>`;
 }
 
 function diaryDayHeaderHtml(day) {
   return `<p class="ui-muted text-[11px] font-bold uppercase tracking-wider mt-2 mb-1 pl-1">${diaryDayHeaderLabel(day)}</p>`;
+}
+
+async function confirmDeleteDiaryEvent(eventId) {
+  if (!confirm('Rimuovere questo evento dal Diario? Non riguarda l\'Opera/Autore, solo la voce di cronologia. L\'azione non è reversibile.')) return;
+  await deleteDiaryEvent(eventId);
+  await renderDiario();
 }
 
 async function renderDiario() {
