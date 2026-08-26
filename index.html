@@ -151,6 +151,7 @@
             <option value="name-asc" selected>Nome (A-Z)</option>
             <option value="period-asc">Periodo storico</option>
             <option value="created-desc">Ultimo inserimento</option>
+            <option value="linkedcount-desc">Numero opere (decrescente)</option>
           </select>
         </div>
         <p id="autori-count" class="ui-muted text-xs mb-2"></p>
@@ -690,7 +691,7 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.25';
+const APP_VERSION = '1.26';
 
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 4; // bump da 3 a 4: nessun nuovo store, ma gli autori guadagnano i campi birthYear/periodTag
@@ -2180,7 +2181,7 @@ async function deleteOperaFromModal() {
 
 let authorSearchQuery = '';
 let authorFilters = { periodTag: [] };
-let authorSort = 'name-asc'; // 'name-asc' | 'period-asc' | 'created-desc'
+let authorSort = 'name-asc'; // 'name-asc' | 'period-asc' | 'created-desc' | 'linkedcount-desc'
 let authorPageSize = 25; // 10 | 25 | 50 | 'all'
 let authorPage = 1;
 
@@ -2279,6 +2280,11 @@ function sortAuthorsList(list) {
     });
   } else if (authorSort === 'created-desc') {
     arr.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  } else if (authorSort === 'linkedcount-desc') {
+    arr.sort((a, b) => {
+      const countDiff = (b.linkedOperaIds || []).length - (a.linkedOperaIds || []).length;
+      return countDiff !== 0 ? countDiff : a.name.localeCompare(b.name, 'it');
+    });
   } else {
     arr.sort((a, b) => a.name.localeCompare(b.name, 'it')); // 'name-asc', default
   }
