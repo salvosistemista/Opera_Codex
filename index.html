@@ -77,6 +77,60 @@
   .ui-accent-border { border-color: var(--theme-accent); }
 
   #mobile-drawer.open { transform: translateX(0); }
+
+  /* ============ Vista Scaffale (Punto 5.x) ============
+     I dorsi sono "impilati" in un flex-wrap ad altezza uniforme: lo spessore (larghezza) di ogni
+     dorso è proporzionale alle pagine, l'altezza è invece fissa (non conosciamo il formato fisico
+     del libro). Il "ripiano" di legno sotto ogni riga è un unico repeating-gradient sullo sfondo
+     del contenitore: funziona perché tutte le righe hanno la stessa altezza (--shelf-spine-h) più
+     lo stesso gap (--shelf-row-gap), quindi il periodo del pattern coincide sempre con l'inizio di
+     ogni riga wrappata dal browser, senza bisogno di misurare le righe via JS. */
+  .shelf-wrap {
+    --shelf-spine-h: 172px;
+    --shelf-row-gap: 30px;
+    --shelf-plank-1: #8a5a34;
+    --shelf-plank-2: #6e4526;
+    display: flex; flex-wrap: wrap; align-items: flex-end;
+    column-gap: 3px; row-gap: var(--shelf-row-gap);
+    padding: 2px 2px 0 2px; margin-bottom: 8px;
+    background-repeat: repeat-y;
+    background-position: 0 0;
+    background-size: 100% calc(var(--shelf-spine-h) + var(--shelf-row-gap));
+    background-image: repeating-linear-gradient(to bottom,
+      transparent 0, transparent var(--shelf-spine-h),
+      var(--shelf-plank-1) var(--shelf-spine-h), var(--shelf-plank-2) calc(var(--shelf-spine-h) + 10px),
+      transparent calc(var(--shelf-spine-h) + 10px), transparent calc(var(--shelf-spine-h) + var(--shelf-row-gap)));
+  }
+  @media (max-width: 767px) {
+    .shelf-wrap { --shelf-spine-h: 132px; --shelf-row-gap: 26px; }
+  }
+  .book-spine {
+    position: relative;
+    height: var(--shelf-spine-h);
+    border-radius: 3px 3px 1px 1px;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,.18), 2px 0 4px rgba(0,0,0,.25);
+    background-color: #999; background-repeat: no-repeat;
+    cursor: pointer;
+    overflow: hidden;
+    flex-shrink: 0;
+    transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .book-spine:hover, .book-spine:focus-visible { transform: translateY(-6px); box-shadow: inset 0 0 0 1px rgba(0,0,0,.18), 3px 4px 8px rgba(0,0,0,.35); }
+  .book-spine-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 45%);
+    pointer-events: none;
+  }
+  .book-spine-title {
+    position: absolute; inset: 4px 2px;
+    display: flex; align-items: flex-end; justify-content: center;
+    writing-mode: vertical-rl; transform: rotate(180deg);
+    font-size: 10.5px; font-weight: 600; line-height: 1.15;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    letter-spacing: 0.01em;
+    pointer-events: none;
+  }
+  .shelf-view-toggle button.active { background-color: var(--theme-accent); color: #fff; }
 </style>
 </head>
 <body class="theme-soft font-sans antialiased h-full">
@@ -133,10 +187,15 @@
             <option value="collana-asc">Collana & N° volume</option>
             <option value="rating-desc">Valutazione (decrescente)</option>
           </select>
+          <div id="catalog-view-toggle" class="shelf-view-toggle flex gap-1 shrink-0 ui-input p-1 rounded-xl border">
+            <button type="button" onclick="setCatalogViewMode('list')" data-view-btn="list" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold">☰ Elenco</button>
+            <button type="button" onclick="setCatalogViewMode('shelf')" data-view-btn="shelf" class="px-2.5 py-1.5 rounded-lg text-xs font-semibold">📚 Scaffale</button>
+          </div>
         </div>
         <p id="catalogo-count" class="ui-muted text-xs mb-2"></p>
         <button onclick="applyModifierToFilteredResults()" class="ui-btn-sec px-3 py-1.5 rounded-lg text-[11px] font-semibold mb-3">🏷️ Applica Modificatore ai risultati filtrati</button>
         <div id="catalogo-list" class="flex flex-col gap-4"></div>
+        <div id="catalogo-shelf" class="hidden shelf-wrap"></div>
         <div id="catalogo-pagination" class="flex items-center justify-center gap-2 mt-4 mb-16 md:mb-6"></div>
       </section>
 
@@ -718,6 +777,25 @@
     </div>
   </div>
 
+  <!-- ===================== ANTEPRIMA DORSO SCAFFALE ===================== -->
+  <div id="shelf-preview" class="hidden fixed inset-0 z-[65] flex items-end md:items-center justify-center bg-black/50" onclick="if(event.target.id==='shelf-preview') closeShelfPreview()">
+    <div class="ui-card border w-full md:max-w-sm rounded-t-2xl md:rounded-2xl p-4 pb-safe-nav md:pb-4">
+      <div class="flex items-start gap-3">
+        <div id="shelf-preview-cover-wrap" class="w-16 h-24 shrink-0 rounded-lg overflow-hidden bg-gray-500/15 flex items-center justify-center text-2xl"></div>
+        <div class="flex-1 min-w-0">
+          <p id="shelf-preview-title" class="font-bold leading-snug"></p>
+          <p id="shelf-preview-authors" class="ui-muted text-xs mt-0.5"></p>
+          <p id="shelf-preview-meta" class="ui-muted text-[11px] mt-1"></p>
+        </div>
+        <button onclick="closeShelfPreview()" class="ui-btn-sec w-8 h-8 rounded-lg font-bold shrink-0">✕</button>
+      </div>
+      <div class="flex gap-2 mt-4">
+        <button onclick="closeShelfPreview()" class="ui-btn-sec flex-1 py-2 rounded-xl text-sm font-semibold">Chiudi</button>
+        <button id="shelf-preview-edit-btn" class="ui-accent-bg text-white flex-1 py-2 rounded-xl text-sm font-semibold">✎ Modifica Opera</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 /* =====================================================================================
    OPERA CODEX — MOTORE DATI (invariato dal Punto 1) + IMPALCATURA UI (Punto 2)
@@ -725,7 +803,7 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.29';
+const APP_VERSION = '1.30';
 
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 5; // bump da 4 a 5: nuovo store "diario" (eventi cronologici di lettura/modifica),
@@ -2068,6 +2146,23 @@ let catalogPageSize = 25; // 10 | 25 | 50 | 'all'
 let seriesFilterOpen = false;
 let collanaFilterOpen = false;
 let catalogPage = 1;
+let catalogViewMode = 'list'; // 'list' | 'shelf'
+
+// Colore di base del dorso quando l'Istanza rappresentativa non ha una copertina: una tonalità
+// fissa per macro-categoria, con una leggera variazione (hash del titolo) così lo scaffale non
+// risulta uniforme quando ci sono molte Opere della stessa macro-categoria senza copertina.
+const MACRO_SPINE_HUE = { 'Narrativa': 222, 'Saggistica': 152, 'Poesia & Teatro': 275, 'Fumetti & Illustrati': 18 };
+function hashStringToInt(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) { h = (h * 31 + str.charCodeAt(i)) | 0; }
+  return Math.abs(h);
+}
+function spineColorForOpera(opera) {
+  const baseHue = MACRO_SPINE_HUE[opera.macro] ?? 210;
+  const jitter = hashStringToInt(opera.title || opera.id) % 26 - 13; // ±13°
+  const hue = (baseHue + jitter + 360) % 360;
+  return `hsl(${hue}, 38%, 34%)`;
+}
 
 async function toggleFilterValue(key, value) {
   const list = catalogFilters[key];
@@ -2103,8 +2198,20 @@ async function setRecentDaysFilter(value) {
 async function goToPage(page) {
   catalogPage = page;
   await renderCatalogo();
-  const list = document.getElementById('catalogo-list');
+  const list = document.getElementById(catalogViewMode === 'shelf' ? 'catalogo-shelf' : 'catalogo-list');
   if (list && typeof list.scrollIntoView === 'function') list.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+async function setCatalogViewMode(mode) {
+  if (mode !== 'list' && mode !== 'shelf') return;
+  catalogViewMode = mode;
+  await setSetting('catalogViewMode', mode);
+  updateCatalogViewToggleUI();
+  await renderCatalogo();
+}
+function updateCatalogViewToggleUI() {
+  document.querySelectorAll('[data-view-btn]').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-view-btn') === catalogViewMode);
+  });
 }
 async function resetCatalogFilters() {
   catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [], recentDays: null, series: [], collana: [], rating: [], authorCard: [] };
@@ -2412,10 +2519,12 @@ async function initApp() {
     currentNavOrder = (Array.isArray(savedOrder) && savedOrder.length === SECTIONS.length) ? savedOrder : DEFAULT_NAV_ORDER;
     navShowLabels = await getSetting('navShowLabels', true);
     coverMaxSize = await getSetting('coverMaxSize', 200);
+    catalogViewMode = await getSetting('catalogViewMode', 'list');
     document.getElementById('webdav-url').value = await getSetting('webdavUrl', '');
     document.getElementById('webdav-username').value = await getSetting('webdavUsername', '');
     document.getElementById('gdrive-client-id').value = await getSetting('gdriveClientId', '');
     updateGoogleDriveStatus();
+    updateCatalogViewToggleUI();
     await refreshTagAliasCache();
     await refreshTagColorCache();
     await refreshAuthorCardCache();
@@ -3920,9 +4029,14 @@ function sortOpere(list) {
 }
 
 async function renderCatalogo() {
-  const container = document.getElementById('catalogo-list');
+  const listContainer = document.getElementById('catalogo-list');
+  const shelfContainer = document.getElementById('catalogo-shelf');
   const countEl = document.getElementById('catalogo-count');
   const paginationEl = document.getElementById('catalogo-pagination');
+  const container = catalogViewMode === 'shelf' ? shelfContainer : listContainer;
+  listContainer.classList.toggle('hidden', catalogViewMode === 'shelf');
+  shelfContainer.classList.toggle('hidden', catalogViewMode !== 'shelf');
+  updateCatalogViewToggleUI();
 
   const all = await dbGetAll();
   const filtered = sortOpere(all.filter(o => operaMatchesFilters(o) && operaHasMatchingInstance(o)));
@@ -3960,6 +4074,12 @@ async function renderCatalogo() {
   const startIdx = (catalogPage - 1) * pageSize;
   const pageItems = catalogPageSize === 'all' ? filtered : filtered.slice(startIdx, startIdx + pageSize);
   const instanceFilterActive = catalogFilters.status.length > 0 || catalogFilters.ownership.length > 0 || catalogFilters.format.length > 0 || catalogFilters.collana.length > 0 || catalogFilters.rating.length > 0;
+
+  if (catalogViewMode === 'shelf') {
+    shelfContainer.innerHTML = pageItems.map(opera => renderShelfSpine(opera, instanceFilterActive)).join('');
+    renderPaginationControls(totalPages);
+    return;
+  }
 
   const allAuthorsForBadges = await getAllAuthors();
   const authorsByOpera = {};
@@ -4051,6 +4171,81 @@ function renderPaginationControls(totalPages) {
 
   el.innerHTML = `<div class="flex flex-wrap items-center justify-center gap-2 w-full">${numbered}</div>`;
 }
+
+// --- VISTA SCAFFALE -----------------------------------------------------------------------
+// Un dorso per Opera. Sceglie una singola Istanza "rappresentativa" tra tutte quelle delle
+// Edizioni dell'Opera (rispettando i filtri di istanza se attivi) per determinare pagine e
+// copertina: preferisce chi ha entrambe, poi chi ha almeno le pagine (per lo spessore), poi chi
+// ha almeno la copertina, infine la prima istanza disponibile.
+function getRepresentativeInstance(opera, instanceFilterActive) {
+  let candidates = opera.editions.flatMap(e => e.instances);
+  if (instanceFilterActive) {
+    const matching = candidates.filter(i => instanceMatchesFilters(i));
+    if (matching.length) candidates = matching;
+  }
+  if (!candidates.length) return null;
+  const withBoth = candidates.find(i => i.coverBase64 && i.totalPages);
+  if (withBoth) return withBoth;
+  const withPages = candidates.find(i => i.totalPages);
+  if (withPages) return withPages;
+  const withCover = candidates.find(i => i.coverBase64);
+  if (withCover) return withCover;
+  return candidates[0];
+}
+
+// Spessore del dorso proporzionale alle pagine dell'Istanza rappresentativa, con un minimo (per
+// restare comunque toccabile su mobile) e un massimo (per non spaccare il layout con tomi enormi).
+const SPINE_MIN_PX = 16;
+const SPINE_MAX_PX = 74;
+const SPINE_PX_PER_PAGE = 0.085;
+function spineWidthPx(totalPages) {
+  const pages = Number(totalPages) || 0;
+  return Math.round(Math.min(SPINE_MAX_PX, Math.max(SPINE_MIN_PX, SPINE_MIN_PX + pages * SPINE_PX_PER_PAGE)));
+}
+
+function renderShelfSpine(opera, instanceFilterActive) {
+  const inst = getRepresentativeInstance(opera, instanceFilterActive);
+  const width = spineWidthPx(inst ? inst.totalPages : 0);
+  const hasCover = !!(inst && inst.coverBase64);
+  const bgStyle = hasCover
+    ? `width:${width}px; background-image:url('${inst.coverBase64}'); background-size:auto 100%; background-position:center;`
+    : `width:${width}px; background-color:${spineColorForOpera(opera)};`;
+  const authors = getOperaAuthors(opera);
+  const titleLine = authors.length ? `${opera.title} — ${authors[0]}` : opera.title;
+  return `
+    <div class="book-spine" style="${bgStyle}" onclick="openShelfPreview('${opera.id}')" title="${titleLine.replace(/"/g, '&quot;')}">
+      ${hasCover ? '<div class="book-spine-overlay"></div>' : ''}
+      <span class="book-spine-title" style="color:${hasCover ? '#fff' : '#f5f0e6'}; ${hasCover ? 'text-shadow:0 1px 3px rgba(0,0,0,.8);' : ''}">${titleLine}</span>
+    </div>`;
+}
+
+function openShelfPreview(operaId) {
+  dbGetAll().then(all => {
+    const opera = all.find(o => o.id === operaId);
+    if (!opera) return;
+    const instanceFilterActive = catalogFilters.status.length > 0 || catalogFilters.ownership.length > 0 || catalogFilters.format.length > 0 || catalogFilters.collana.length > 0 || catalogFilters.rating.length > 0;
+    const inst = getRepresentativeInstance(opera, instanceFilterActive);
+
+    const coverWrap = document.getElementById('shelf-preview-cover-wrap');
+    coverWrap.innerHTML = (inst && inst.coverBase64)
+      ? `<img src="${inst.coverBase64}" class="w-full h-full object-cover cursor-zoom-in" onclick="event.stopPropagation(); openCoverViewer(this.src)">`
+      : '📖';
+
+    document.getElementById('shelf-preview-title').textContent = opera.title;
+    document.getElementById('shelf-preview-authors').textContent = formatAuthorsDisplay(getOperaAuthors(opera)) || 'Autore sconosciuto';
+    const metaParts = [opera.macro];
+    if (inst) {
+      metaParts.push(inst.format);
+      if (inst.totalPages) metaParts.push(`${inst.totalPages} pag.`);
+    }
+    if (opera.series) metaParts.push(opera.series + (opera.seriesIndex ? ' #' + opera.seriesIndex : ''));
+    document.getElementById('shelf-preview-meta').textContent = metaParts.join(' · ');
+
+    document.getElementById('shelf-preview-edit-btn').onclick = () => { closeShelfPreview(); openOperaModal(opera.id); };
+    openModal('shelf-preview');
+  });
+}
+function closeShelfPreview() { closeModal('shelf-preview'); }
 
 // --- MODULO TASSONOMIA --------------------------------------------------------------------
 
@@ -4823,12 +5018,14 @@ async function reloadAppStateAfterImport() {
   currentNavOrder = (Array.isArray(savedOrder) && savedOrder.length === SECTIONS.length) ? savedOrder : DEFAULT_NAV_ORDER;
   navShowLabels = await getSetting('navShowLabels', true);
   coverMaxSize = await getSetting('coverMaxSize', 200);
+  catalogViewMode = await getSetting('catalogViewMode', 'list');
   document.getElementById('webdav-url').value = await getSetting('webdavUrl', '');
   document.getElementById('webdav-username').value = await getSetting('webdavUsername', '');
   document.getElementById('webdav-password').value = '';
   document.getElementById('gdrive-client-id').value = await getSetting('gdriveClientId', '');
   googleAccessToken = null;
   updateGoogleDriveStatus();
+  updateCatalogViewToggleUI();
   await refreshTagAliasCache();
   await refreshTagColorCache();
   await refreshAuthorCardCache();
