@@ -118,18 +118,24 @@
   .book-spine:hover, .book-spine:focus-visible { transform: translateY(-6px); box-shadow: inset 0 0 0 1px rgba(0,0,0,.18), 3px 4px 8px rgba(0,0,0,.35); }
   .book-spine-overlay {
     position: absolute; inset: 0;
-    background: linear-gradient(to top, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 45%);
+    background: linear-gradient(to bottom, rgba(0,0,0,.6) 0%, rgba(0,0,0,0) 42%);
     pointer-events: none;
   }
-  .book-spine-title {
-    position: absolute; inset: 4px 2px;
-    display: flex; align-items: flex-end; justify-content: center;
+  .book-spine-text {
+    position: absolute; inset: 5px 2px 4px 2px;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    gap: 4px;
+    pointer-events: none;
+  }
+  .book-spine-line {
     writing-mode: vertical-rl; transform: rotate(180deg);
-    font-size: 10.5px; font-weight: 600; line-height: 1.15;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     letter-spacing: 0.01em;
-    pointer-events: none;
+    min-height: 0;
+    width: 100%;
   }
+  .book-spine-author { font-size: 8.5px; font-weight: 500; opacity: .82; flex: 0 0 30%; }
+  .book-spine-title-line { font-size: 10.5px; font-weight: 700; line-height: 1.15; flex: 1 1 auto; }
   .shelf-view-toggle button.active { background-color: var(--theme-accent); color: #fff; }
 </style>
 </head>
@@ -803,7 +809,7 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.30';
+const APP_VERSION = '1.31';
 
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 5; // bump da 4 a 5: nuovo store "diario" (eventi cronologici di lettura/modifica),
@@ -4211,11 +4217,16 @@ function renderShelfSpine(opera, instanceFilterActive) {
     ? `width:${width}px; background-image:url('${inst.coverBase64}'); background-size:auto 100%; background-position:center;`
     : `width:${width}px; background-color:${spineColorForOpera(opera)};`;
   const authors = getOperaAuthors(opera);
-  const titleLine = authors.length ? `${opera.title} — ${authors[0]}` : opera.title;
+  const authorLabel = authors.length ? authors[0] : '';
+  const tooltip = authorLabel ? `${authorLabel} — ${opera.title}` : opera.title;
+  const textColorStyle = `color:${hasCover ? '#fff' : '#f5f0e6'}; ${hasCover ? 'text-shadow:0 1px 3px rgba(0,0,0,.8);' : ''}`;
   return `
-    <div class="book-spine" style="${bgStyle}" onclick="openShelfPreview('${opera.id}')" title="${titleLine.replace(/"/g, '&quot;')}">
+    <div class="book-spine" style="${bgStyle}" onclick="openShelfPreview('${opera.id}')" title="${tooltip.replace(/"/g, '&quot;')}">
       ${hasCover ? '<div class="book-spine-overlay"></div>' : ''}
-      <span class="book-spine-title" style="color:${hasCover ? '#fff' : '#f5f0e6'}; ${hasCover ? 'text-shadow:0 1px 3px rgba(0,0,0,.8);' : ''}">${titleLine}</span>
+      <div class="book-spine-text" style="${textColorStyle}">
+        ${authorLabel ? `<span class="book-spine-line book-spine-author">${authorLabel}</span>` : ''}
+        <span class="book-spine-line book-spine-title-line">${opera.title}</span>
+      </div>
     </div>`;
 }
 
