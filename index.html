@@ -145,10 +145,17 @@
           <h2 class="text-xl font-bold">Autori</h2>
           <button onclick="openAuthorModal()" class="ui-accent-bg text-white px-3 py-2 rounded-xl text-xs font-semibold shrink-0">+ Nuova scheda</button>
         </div>
-        <input id="author-search-inline" type="text" placeholder="Cerca per nome, biografia, tematiche, impatto..." oninput="onAuthorSearch(this.value)" class="ui-input w-full p-2.5 rounded-xl border text-sm mb-3">
-        <div id="autori-filters-panel" class="ui-card border rounded-xl p-3 mb-3"></div>
+        <div class="flex flex-wrap items-center gap-2 mb-2">
+          <input id="author-search-inline" type="text" placeholder="Cerca per nome, biografia, tematiche, impatto..." oninput="onAuthorSearch(this.value)" class="ui-input flex-1 min-w-[12rem] p-2.5 rounded-xl border text-sm">
+          <select class="author-sort-select ui-input p-2.5 rounded-xl border text-xs" onchange="setAuthorSortOrder(this.value)">
+            <option value="name-asc" selected>Nome (A-Z)</option>
+            <option value="period-asc">Periodo storico</option>
+            <option value="created-desc">Ultimo inserimento</option>
+          </select>
+        </div>
         <p id="autori-count" class="ui-muted text-xs mb-2"></p>
         <div id="autori-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+        <div id="autori-pagination" class="flex items-center justify-center gap-2 mt-4 mb-16 md:mb-6"></div>
       </section>
 
       <section id="section-tassonomia" class="hidden">
@@ -683,7 +690,7 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.24';
+const APP_VERSION = '1.25';
 
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 4; // bump da 3 a 4: nessun nuovo store, ma gli autori guadagnano i campi birthYear/periodTag
@@ -1806,8 +1813,14 @@ async function renderFiltersPanel(suffix) {
   `;
 }
 
+// Il pannello filtri di sidebar/drawer è unico ma il suo contenuto dipende dalla sezione
+// attiva: ogni sezione filtrabile (Catalogo, Autori) espone solo i campi che ha senso
+// filtrare/ordinare per le sue schede. Le altre sezioni non mostrano nulla.
 async function renderFiltersPanels() {
-  const html = await renderFiltersPanel();
+  let html;
+  if (currentSection === 'catalogo') html = await renderFiltersPanel();
+  else if (currentSection === 'autori') html = renderAuthorFiltersPanel();
+  else html = `<p class="ui-muted text-xs">Nessun filtro disponibile per questa sezione.</p>`;
   document.getElementById('sidebar-filters-slot').innerHTML = html;
   document.getElementById('drawer-filters-slot').innerHTML = html;
 }
@@ -1881,8 +1894,11 @@ function switchSection(key) {
   currentSection = key;
   SECTIONS.forEach(s => document.getElementById('section-' + s.key).classList.toggle('hidden', s.key !== key));
   updateNavActiveState();
-  document.getElementById('drawer-toggle-btn').classList.toggle('invisible', key !== 'catalogo');
+  // Il tasto "☰ Filtri" (mobile) apre lo stesso drawer per qualunque sezione filtrabile;
+  // resta nascosto per le sezioni che non hanno filtri (Tassonomia, Impostazioni, ecc.).
+  document.getElementById('drawer-toggle-btn').classList.toggle('invisible', !['catalogo', 'autori'].includes(key));
   closeDrawer();
+  renderFiltersPanels();
   if (key === 'tassonomia') renderTassonomia();
   if (key === 'autori') renderAutori();
 }
@@ -2164,26 +2180,62 @@ async function deleteOperaFromModal() {
 
 let authorSearchQuery = '';
 let authorFilters = { periodTag: [] };
+let authorSort = 'name-asc'; // 'name-asc' | 'period-asc' | 'created-desc'
+let authorPageSize = 25; // 10 | 25 | 50 | 'all'
+let authorPage = 1;
 
 async function toggleAuthorPeriodFilter(tag) {
   const list = authorFilters.periodTag;
   const idx = list.indexOf(tag);
   if (idx === -1) list.push(tag); else list.splice(idx, 1);
+  authorPage = 1;
+  await renderFiltersPanels();
   await renderAutori();
 }
 async function resetAuthorFilters() {
   authorFilters = { periodTag: [] };
+  authorPage = 1;
+  await renderFiltersPanels();
   await renderAutori();
 }
+async function setAuthorSortOrder(value) {
+  authorSort = value;
+  document.querySelectorAll('.author-sort-select').forEach(el => el.value = value);
+  await renderAutori();
+}
+async function setAuthorPageSize(value) {
+  authorPageSize = value === 'all' ? 'all' : Number(value);
+  authorPage = 1;
+  document.querySelectorAll('.author-pagesize-select').forEach(el => el.value = value);
+  await renderAutori();
+}
+async function goToAuthorPage(page) {
+  authorPage = page;
+  await renderAutori();
+  const list = document.getElementById('autori-list');
+  if (list && typeof list.scrollIntoView === 'function') list.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// Ritorna l'HTML del pannello filtri Autori: stesso ruolo di renderFiltersPanel() per il
+// Catalogo, ma con i soli campi che ha senso filtrare/ordinare sulle schede autore.
 function renderAuthorFiltersPanel() {
-  const container = document.getElementById('autori-filters-panel');
-  if (!container) return;
-  container.innerHTML = `
+  return `
+    <p class="text-[10px] font-bold uppercase tracking-wider ui-accent-text mb-2">Filtri Autori</p>
+
     <p class="ui-muted text-[10px] font-semibold mb-1">Periodo storico</p>
-    <div class="flex flex-wrap gap-1 mb-2">
+    <div class="flex flex-wrap gap-1 mb-3">
       ${PERIOD_TAG_ORDER.map(tag => pillButton(tag, authorFilters.periodTag.includes(tag), `toggleAuthorPeriodFilter('${tag.replace(/'/g, "\\'")}')`)).join('')}
     </div>
-    ${authorFilters.periodTag.length ? `<button type="button" onclick="resetAuthorFilters()" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">✕ Azzera filtro periodo</button>` : ''}
+
+    <p class="ui-muted text-[10px] font-semibold mb-1">Autori per pagina</p>
+    <select onchange="setAuthorPageSize(this.value)" class="author-pagesize-select ui-input w-full p-2 rounded-lg border text-xs mb-3">
+      <option value="10" ${authorPageSize === 10 ? 'selected' : ''}>10 per pagina</option>
+      <option value="25" ${authorPageSize === 25 ? 'selected' : ''}>25 per pagina</option>
+      <option value="50" ${authorPageSize === 50 ? 'selected' : ''}>50 per pagina</option>
+      <option value="all" ${authorPageSize === 'all' ? 'selected' : ''}>Tutti</option>
+    </select>
+
+    <button type="button" onclick="resetAuthorFilters()" class="ui-btn-sec w-full py-2 rounded-lg text-xs font-semibold">✕ Azzera filtri</button>
   `;
 }
 let authorPhotoPreviewBase64 = '';
@@ -2191,6 +2243,7 @@ let authorModalLinkedOperaIds = [];
 
 async function onAuthorSearch(value) {
   authorSearchQuery = value;
+  authorPage = 1;
   await renderAutori();
 }
 
@@ -2212,10 +2265,29 @@ function authorCardHtml(author) {
     </div>`;
 }
 
+function sortAuthorsList(list) {
+  const arr = [...list];
+  if (authorSort === 'period-asc') {
+    arr.sort((a, b) => {
+      const ai = PERIOD_TAG_ORDER.indexOf(a.periodTag || PERIOD_UNSPECIFIED);
+      const bi = PERIOD_TAG_ORDER.indexOf(b.periodTag || PERIOD_UNSPECIFIED);
+      if (ai !== bi) return ai - bi;
+      const ay = (a.birthYear === null || a.birthYear === undefined) ? Infinity : a.birthYear;
+      const by = (b.birthYear === null || b.birthYear === undefined) ? Infinity : b.birthYear;
+      if (ay !== by) return ay - by;
+      return a.name.localeCompare(b.name, 'it');
+    });
+  } else if (authorSort === 'created-desc') {
+    arr.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  } else {
+    arr.sort((a, b) => a.name.localeCompare(b.name, 'it')); // 'name-asc', default
+  }
+  return arr;
+}
+
 async function renderAutori() {
   const container = document.getElementById('autori-list');
   if (!container) return;
-  renderAuthorFiltersPanel();
 
   const authors = await getAllAuthors();
   const q = authorSearchQuery.trim().toLowerCase();
@@ -2225,9 +2297,13 @@ async function renderAutori() {
   if (authorFilters.periodTag.length) {
     filtered = filtered.filter(a => authorFilters.periodTag.includes(a.periodTag || PERIOD_UNSPECIFIED));
   }
+  filtered = sortAuthorsList(filtered);
 
   const countEl = document.getElementById('autori-count');
-  if (countEl) countEl.textContent = `${filtered.length} di ${authors.length} autori`;
+  const hasActiveFilters = q || authorFilters.periodTag.length;
+  if (countEl) countEl.textContent = hasActiveFilters ? `${filtered.length} autore/i trovati su ${authors.length} totali` : `${authors.length} autore/i in archivio`;
+
+  const paginationEl = document.getElementById('autori-pagination');
 
   if (!authors.length) {
     container.innerHTML = `
@@ -2236,17 +2312,46 @@ async function renderAutori() {
         <p class="font-semibold mb-1">Nessuna scheda autore</p>
         <p class="ui-muted text-sm">Usa "+ Nuova scheda" per crearne una, oppure collega un autore direttamente dalla scheda di un'Opera.</p>
       </div>`;
+    if (paginationEl) paginationEl.innerHTML = '';
     return;
   }
   if (!filtered.length) {
     container.innerHTML = `
       <div class="ui-card border rounded-2xl p-8 text-center col-span-full">
         <p class="text-3xl mb-2">🔍</p>
-        <p class="font-semibold mb-1">Nessun autore corrisponde alla ricerca</p>
+        <p class="font-semibold mb-1">Nessun autore corrisponde alla ricerca o ai filtri</p>
+        <p class="ui-muted text-sm">Prova ad azzerare i filtri dal pannello "☰ Filtri".</p>
       </div>`;
+    if (paginationEl) paginationEl.innerHTML = '';
     return;
   }
-  container.innerHTML = filtered.map(authorCardHtml).join('');
+
+  const pageSize = authorPageSize === 'all' ? filtered.length : authorPageSize;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  authorPage = Math.min(Math.max(1, authorPage), totalPages);
+  const startIdx = (authorPage - 1) * pageSize;
+  const pageItems = authorPageSize === 'all' ? filtered : filtered.slice(startIdx, startIdx + pageSize);
+
+  container.innerHTML = pageItems.map(authorCardHtml).join('');
+  renderAuthorPaginationControls(totalPages);
+}
+
+function renderAuthorPaginationControls(totalPages) {
+  const el = document.getElementById('autori-pagination');
+  if (!el) return;
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+
+  const maxButtons = window.innerWidth < 768 ? 5 : 7;
+  let startP = Math.max(1, authorPage - Math.floor(maxButtons / 2));
+  let endP = Math.min(totalPages, startP + maxButtons - 1);
+  startP = Math.max(1, endP - maxButtons + 1);
+  let numbered = `<button onclick="goToAuthorPage(${Math.max(1, authorPage - 1)})" ${authorPage === 1 ? 'disabled' : ''} class="ui-btn-sec w-8 h-8 rounded-lg text-xs font-bold ${authorPage === 1 ? 'opacity-30' : ''}">‹</button>`;
+  for (let p = startP; p <= endP; p++) {
+    numbered += `<button onclick="goToAuthorPage(${p})" class="w-8 h-8 rounded-lg text-xs font-bold ${p === authorPage ? 'ui-accent-bg text-white' : 'ui-btn-sec'}">${p}</button>`;
+  }
+  numbered += `<button onclick="goToAuthorPage(${Math.min(totalPages, authorPage + 1)})" ${authorPage === totalPages ? 'disabled' : ''} class="ui-btn-sec w-8 h-8 rounded-lg text-xs font-bold ${authorPage === totalPages ? 'opacity-30' : ''}">›</button>`;
+
+  el.innerHTML = `<div class="flex flex-wrap items-center justify-center gap-2 w-full">${numbered}</div>`;
 }
 
 function setAuthorPhotoPreview(base64) {
