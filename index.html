@@ -715,7 +715,7 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.27';
+const APP_VERSION = '1.28';
 
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 4; // bump da 3 a 4: nessun nuovo store, ma gli autori guadagnano i campi birthYear/periodTag
@@ -3999,6 +3999,7 @@ async function importAuthorsFromObject(data) {
   if (!ok) return false;
 
   let added = 0, updated = 0;
+  const allNationalityTags = new Set();
   for (const incoming of data.autori) {
     if (!incoming || !incoming.name) continue;
     const match = existingByName.get(String(incoming.name).toLowerCase());
@@ -4013,10 +4014,27 @@ async function importAuthorsFromObject(data) {
       createdAt: match ? match.createdAt : (incoming.createdAt || new Date().toISOString()),
       updatedAt: new Date().toISOString(),
     };
+    // Anno di nascita: rispetta il valore esplicito presente nel file (anche se null, es. export
+    // di una scheda già marcata "senza data"), altrimenti prova a dedurlo dalla biografia — stesso
+    // comportamento di una scheda creata a mano o di un ripristino da backup completo. periodTag
+    // è sempre ricalcolato da birthYear, mai preso alla lettera dal file, per restare coerente.
+    record.birthYear = incoming.birthYear !== undefined
+      ? (incoming.birthYear === null || incoming.birthYear === '' ? null : Number(incoming.birthYear))
+      : extractBirthYearFromBiography(record.biography);
+    record.periodTag = bucketForBirthYear(record.birthYear);
+    // Nazionalità: stessa logica, valore esplicito se presente nel file (anche array vuoto),
+    // altrimenti dedotta dalla biografia.
+    record.nationalityTags = incoming.nationalityTags !== undefined
+      ? normalizeTagList(incoming.nationalityTags)
+      : normalizeTagList(extractNationalityTagsFromBiography(record.biography));
+    record.nationalityTags.forEach(t => allNationalityTags.add(t));
+
     await dbSave(record, STORE_AUTORI);
     if (match) updated++; else added++;
   }
+  await registerTagsInRegistry('nationalityTags', [...allNationalityTags]);
   await refreshAuthorCardCache();
+  await refreshTagDatalists();
   await renderAutori();
   await refreshOperaAuthorLinks();
   if (currentSection === 'catalogo') await renderCatalogo();
