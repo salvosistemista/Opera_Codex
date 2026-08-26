@@ -146,6 +146,8 @@
           <button onclick="openAuthorModal()" class="ui-accent-bg text-white px-3 py-2 rounded-xl text-xs font-semibold shrink-0">+ Nuova scheda</button>
         </div>
         <input id="author-search-inline" type="text" placeholder="Cerca per nome, biografia, tematiche, impatto..." oninput="onAuthorSearch(this.value)" class="ui-input w-full p-2.5 rounded-xl border text-sm mb-3">
+        <div id="autori-filters-panel" class="ui-card border rounded-xl p-3 mb-3"></div>
+        <p id="autori-count" class="ui-muted text-xs mb-2"></p>
         <div id="autori-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
       </section>
 
@@ -611,8 +613,13 @@
           <input id="author-name" type="text" class="ui-input w-full p-2.5 rounded-xl border mt-1">
         </div>
         <div>
+          <label class="text-xs font-semibold ui-muted">Anno di nascita</label>
+          <input id="author-birth-year" type="number" min="1" max="2100" placeholder="es. 1926 — se vuoto, verrà dedotto dalla biografia quando possibile" class="ui-input w-full p-2.5 rounded-xl border mt-1" oninput="updateAuthorPeriodPreview()">
+          <p id="author-period-preview" class="ui-muted text-[11px] mt-1"></p>
+        </div>
+        <div>
           <label class="text-xs font-semibold ui-muted">Biografia</label>
-          <textarea id="author-biography" rows="5" class="ui-input w-full p-2.5 rounded-xl border mt-1"></textarea>
+          <textarea id="author-biography" rows="5" class="ui-input w-full p-2.5 rounded-xl border mt-1" oninput="updateAuthorPeriodPreview()"></textarea>
         </div>
         <div>
           <label class="text-xs font-semibold ui-muted">Tematiche importanti trattate nelle sue opere</label>
@@ -676,10 +683,11 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.23';
+const APP_VERSION = '1.24';
 
 const DB_NAME = 'OperaCodexDB';
-const DB_VERSION = 3; // bump da 2 a 3: aggiunge lo store "autori" anche a chi aveva già aperto le versioni precedenti
+const DB_VERSION = 4; // bump da 3 a 4: nessun nuovo store, ma gli autori guadagnano i campi birthYear/periodTag
+                       // (popolati da una migrazione idempotente lanciata in initApp, vedi migratePeriodTagsIfNeeded)
 const STORE_OPERE = 'opere';
 const STORE_SETTINGS = 'settings';
 const STORE_AUTORI = 'autori';
@@ -777,16 +785,83 @@ function formatAuthorsDisplay(authors) {
   return authors.slice(0, -1).join(', ') + ' e ' + authors[authors.length - 1];
 }
 
+// --- PERIODO STORICO AUTORE (birthYear / periodTag) ---------------------------------------
+// 9 bucket, calcolati a partire dall'anno di nascita. Un autore senza anno riconoscibile
+// (collettivi, pseudonimi, biografie prive di date) resta in PERIOD_UNSPECIFIED finché non
+// viene completato a mano dalla scheda.
+const PERIOD_UNSPECIFIED = 'Non specificato';
+const PERIOD_BUCKETS = [
+  { tag: 'Antichità',               maxYear: 500  },
+  { tag: 'Medioevo',                 maxYear: 1400 },
+  { tag: 'Rinascimento',             maxYear: 1600 },
+  { tag: 'Età Moderna',              maxYear: 1800 },
+  { tag: 'Ottocento',                maxYear: 1900 },
+  { tag: 'Prima metà Novecento',     maxYear: 1945 },
+  { tag: 'Secondo dopoguerra',       maxYear: 1980 },
+  { tag: 'Contemporaneo',            maxYear: Infinity },
+];
+const PERIOD_TAG_ORDER = [...PERIOD_BUCKETS.map(b => b.tag), PERIOD_UNSPECIFIED];
+
+function bucketForBirthYear(birthYear) {
+  if (birthYear === null || birthYear === undefined || isNaN(birthYear)) return PERIOD_UNSPECIFIED;
+  for (const bucket of PERIOD_BUCKETS) { if (birthYear <= bucket.maxYear) return bucket.tag; }
+  return PERIOD_UNSPECIFIED;
+}
+
+// Cerca nel testo della biografia un anno di nascita plausibile:
+// "(1815-1885)" / "(1815-)" / "(1965)" (autori viventi) / "(Genova, 1975)" / "nato/nata nel 1975".
+function extractBirthYearFromBiography(biography) {
+  if (!biography || typeof biography !== 'string') return null;
+  const currentYear = new Date().getFullYear();
+
+  const rangeMatch = biography.match(/\((\d{3,4})\s*-\s*(\d{3,4})?\)/);
+  if (rangeMatch) { const y = parseInt(rangeMatch[1], 10); if (y > 0 && y <= currentYear) return y; }
+
+  const singleYearMatch = biography.match(/\((\d{4})\)/);
+  if (singleYearMatch) { const y = parseInt(singleYearMatch[1], 10); if (y > 1000 && y <= currentYear) return y; }
+
+  const cityYearMatch = biography.match(/\([A-ZÀ-Ý][^,()]*,\s*(\d{3,4})\)/);
+  if (cityYearMatch) { const y = parseInt(cityYearMatch[1], 10); if (y > 0 && y <= currentYear) return y; }
+
+  const natoMatch = biography.match(/nat[oa]\s+(?:a\s+\S+\s+)?nel\s+(\d{3,4})/i);
+  if (natoMatch) { const y = parseInt(natoMatch[1], 10); if (y > 0 && y <= currentYear) return y; }
+
+  return null;
+}
+
+// Migrazione idempotente: assegna birthYear/periodTag a tutte le schede autore che ne sono
+// prive. Segna il completamento in "settings" così non viene ripetuta ad ogni avvio.
+const PERIODTAG_MIGRATION_FLAG = 'migration_periodTag_v1_completed';
+async function migratePeriodTagsIfNeeded() {
+  const alreadyDone = await getSetting(PERIODTAG_MIGRATION_FLAG, false);
+  if (alreadyDone) return;
+
+  const authors = await dbGetAll(STORE_AUTORI);
+  for (const author of authors) {
+    if (author.periodTag) continue; // già valorizzato (manualmente o da run precedente), non toccare
+    const birthYear = extractBirthYearFromBiography(author.biography);
+    author.birthYear = birthYear;
+    author.periodTag = bucketForBirthYear(birthYear);
+    await dbSave(author, STORE_AUTORI);
+  }
+  await setSetting(PERIODTAG_MIGRATION_FLAG, true);
+}
+
 // --- SCHEDE AUTORE (store "autori") ------------------------------------------------------
 // Entità indipendente dal campo libero "authors[]" delle Opere: una scheda autore raccoglie
 // biografia, tematiche e impatto letterario, e può essere collegata esplicitamente a una o più
 // Opere presenti nel catalogo. Il collegamento è tenuto lato Autore (linkedOperaIds) perché è
 // l'autore la "fonte di verità" della relazione: un'Opera non sa nulla delle schede a cui è
 // collegata, si interroga sempre a partire dall'autore.
-function newAuthorSkeleton({ name, photoBase64 = '', biography = '', themes = '', impact = '', linkedOperaIds = [] }) {
+function newAuthorSkeleton({ name, photoBase64 = '', biography = '', themes = '', impact = '', linkedOperaIds = [], birthYear = null }) {
   const now = new Date().toISOString();
+  // Se il chiamante non passa esplicitamente birthYear, prova a dedurlo dalla biografia
+  // (utile sia per import JSON sia per la creazione manuale da modale).
+  const resolvedBirthYear = birthYear !== null && birthYear !== undefined && birthYear !== ''
+    ? Number(birthYear) : extractBirthYearFromBiography(biography);
   return { id: uid('author'), name: String(name).trim(), photoBase64, biography, themes, impact,
-    linkedOperaIds: [...linkedOperaIds], createdAt: now, updatedAt: now };
+    linkedOperaIds: [...linkedOperaIds], birthYear: resolvedBirthYear, periodTag: bucketForBirthYear(resolvedBirthYear),
+    createdAt: now, updatedAt: now };
 }
 async function createAuthor(data) {
   const author = newAuthorSkeleton(data);
@@ -797,6 +872,13 @@ async function updateAuthor(authorId, patch) {
   const author = await dbGet(authorId, STORE_AUTORI);
   if (!author) throw new Error('Scheda autore non trovata: ' + authorId);
   const updated = { ...author, ...patch, id: author.id, updatedAt: new Date().toISOString() };
+  // Se il form invia birthYear, ricalcola periodTag: valore esplicito se presente, altrimenti
+  // fallback all'estrazione automatica dalla biografia (utile se l'utente svuota il campo).
+  if (patch.birthYear !== undefined) {
+    const explicit = (patch.birthYear === '' || patch.birthYear === null) ? null : Number(patch.birthYear);
+    updated.birthYear = explicit !== null ? explicit : extractBirthYearFromBiography(updated.biography);
+    updated.periodTag = bucketForBirthYear(updated.birthYear);
+  }
   await dbSave(updated, STORE_AUTORI);
   return updated;
 }
@@ -1911,6 +1993,7 @@ async function initApp() {
     await refreshTagAliasCache();
     await refreshTagColorCache();
     await refreshAuthorCardCache();
+    await migratePeriodTagsIfNeeded();
 
     renderNav('nav-desktop-slot', { vertical: true });
     renderNav('nav-mobile-slot', { vertical: false });
@@ -2080,6 +2163,29 @@ async function deleteOperaFromModal() {
 // --- SCHEDE AUTORE (UI) --------------------------------------------------------------------
 
 let authorSearchQuery = '';
+let authorFilters = { periodTag: [] };
+
+async function toggleAuthorPeriodFilter(tag) {
+  const list = authorFilters.periodTag;
+  const idx = list.indexOf(tag);
+  if (idx === -1) list.push(tag); else list.splice(idx, 1);
+  await renderAutori();
+}
+async function resetAuthorFilters() {
+  authorFilters = { periodTag: [] };
+  await renderAutori();
+}
+function renderAuthorFiltersPanel() {
+  const container = document.getElementById('autori-filters-panel');
+  if (!container) return;
+  container.innerHTML = `
+    <p class="ui-muted text-[10px] font-semibold mb-1">Periodo storico</p>
+    <div class="flex flex-wrap gap-1 mb-2">
+      ${PERIOD_TAG_ORDER.map(tag => pillButton(tag, authorFilters.periodTag.includes(tag), `toggleAuthorPeriodFilter('${tag.replace(/'/g, "\\'")}')`)).join('')}
+    </div>
+    ${authorFilters.periodTag.length ? `<button type="button" onclick="resetAuthorFilters()" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">✕ Azzera filtro periodo</button>` : ''}
+  `;
+}
 let authorPhotoPreviewBase64 = '';
 let authorModalLinkedOperaIds = [];
 
@@ -2098,7 +2204,10 @@ function authorCardHtml(author) {
       <div class="min-w-0 flex-1">
         <p class="font-bold truncate">${author.name}</p>
         <p class="ui-muted text-xs line-clamp-2 mt-0.5">${excerpt ? excerpt.slice(0, 140) : 'Nessuna biografia inserita.'}</p>
-        <p class="text-[10px] ui-accent-text font-semibold mt-1">${(author.linkedOperaIds || []).length} opera/e collegate</p>
+        <div class="flex items-center gap-2 flex-wrap mt-1">
+          <p class="text-[10px] ui-accent-text font-semibold">${(author.linkedOperaIds || []).length} opera/e collegate</p>
+          <span class="text-[10px] ui-btn-sec px-1.5 py-0.5 rounded-md">${author.periodTag || PERIOD_UNSPECIFIED}</span>
+        </div>
       </div>
     </div>`;
 }
@@ -2106,11 +2215,19 @@ function authorCardHtml(author) {
 async function renderAutori() {
   const container = document.getElementById('autori-list');
   if (!container) return;
+  renderAuthorFiltersPanel();
+
   const authors = await getAllAuthors();
   const q = authorSearchQuery.trim().toLowerCase();
-  const filtered = q
+  let filtered = q
     ? authors.filter(a => [a.name, a.biography, a.themes, a.impact].join(' \n ').toLowerCase().includes(q))
     : authors;
+  if (authorFilters.periodTag.length) {
+    filtered = filtered.filter(a => authorFilters.periodTag.includes(a.periodTag || PERIOD_UNSPECIFIED));
+  }
+
+  const countEl = document.getElementById('autori-count');
+  if (countEl) countEl.textContent = `${filtered.length} di ${authors.length} autori`;
 
   if (!authors.length) {
     container.innerHTML = `
@@ -2139,6 +2256,20 @@ function setAuthorPhotoPreview(base64) {
 }
 function removeAuthorPhotoImage() { setAuthorPhotoPreview(''); }
 
+// Anteprima live del periodTag nel modale: usa il valore esplicito di birthYear se presente,
+// altrimenti prova a dedurlo al volo dal testo della biografia (senza salvare nulla).
+function updateAuthorPeriodPreview() {
+  const yearInput = document.getElementById('author-birth-year').value;
+  const bio = document.getElementById('author-biography').value;
+  const explicit = yearInput !== '' ? Number(yearInput) : null;
+  const resolved = explicit !== null ? explicit : extractBirthYearFromBiography(bio);
+  const tag = bucketForBirthYear(resolved);
+  const preview = document.getElementById('author-period-preview');
+  preview.textContent = resolved
+    ? `Periodo assegnato: ${tag} (anno rilevato: ${resolved})`
+    : `Periodo assegnato: ${tag} (nessun anno riconosciuto nel testo — puoi inserirlo sopra)`;
+}
+
 async function onAuthorPhotoFileSelected(file) {
   if (!file) return;
   try {
@@ -2160,6 +2291,7 @@ async function openAuthorModal(authorId = null) {
     document.getElementById('modal-author-title').textContent = 'Modifica Scheda Autore';
     const author = await dbGet(authorId, STORE_AUTORI);
     document.getElementById('author-name').value = author.name || '';
+    document.getElementById('author-birth-year').value = (author.birthYear !== null && author.birthYear !== undefined) ? author.birthYear : '';
     document.getElementById('author-biography').value = author.biography || '';
     document.getElementById('author-themes').value = author.themes || '';
     document.getElementById('author-impact').value = author.impact || '';
@@ -2167,9 +2299,10 @@ async function openAuthorModal(authorId = null) {
     authorModalLinkedOperaIds = [...(author.linkedOperaIds || [])];
   } else {
     document.getElementById('modal-author-title').textContent = 'Nuova Scheda Autore';
-    ['author-name','author-biography','author-themes','author-impact'].forEach(id => document.getElementById(id).value = '');
+    ['author-name','author-birth-year','author-biography','author-themes','author-impact'].forEach(id => document.getElementById(id).value = '');
     authorModalLinkedOperaIds = [];
   }
+  updateAuthorPeriodPreview();
   await renderAuthorLinkedOperas();
   openModal('modal-author');
 }
@@ -2228,6 +2361,7 @@ async function saveAuthorFromForm() {
   const name = document.getElementById('author-name').value.trim();
   if (!name) { alert('Il nome è obbligatorio.'); return; }
 
+  const birthYearRaw = document.getElementById('author-birth-year').value;
   const data = {
     name,
     biography: document.getElementById('author-biography').value.trim(),
@@ -2235,6 +2369,7 @@ async function saveAuthorFromForm() {
     impact: document.getElementById('author-impact').value.trim(),
     photoBase64: authorPhotoPreviewBase64,
     linkedOperaIds: [...authorModalLinkedOperaIds],
+    birthYear: birthYearRaw !== '' ? Number(birthYearRaw) : null,
   };
 
   if (authorId) { await updateAuthor(authorId, data); } else { await createAuthor(data); }
