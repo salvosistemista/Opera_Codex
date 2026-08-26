@@ -161,9 +161,9 @@
 
       <section id="section-tassonomia" class="hidden">
         <h2 class="text-xl font-bold mb-1">Tassonomia</h2>
-        <p class="ui-muted text-sm mb-3">Gestione di Sottogeneri, Micro-generi e Modificatori: conteggio d'uso (cliccabile per vederli nel Catalogo), rinomina a cascata, fusione o collegamento come sinonimi, spostamento tra livelli, colore, tag non usati.</p>
+        <p class="ui-muted text-sm mb-3">Gestione di Sottogeneri, Micro-generi, Modificatori e Nazionalità (autori): conteggio d'uso (cliccabile per vedere i record corrispondenti), rinomina a cascata, fusione o collegamento come sinonimi, spostamento tra livelli, colore, tag non usati.</p>
         <input id="taxonomy-search" type="text" placeholder="Cerca un tag..." oninput="onTaxonomySearch(this.value)" class="ui-input w-full p-2.5 rounded-xl border text-sm mb-4">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
           <div class="ui-card border rounded-2xl p-4">
             <div class="flex items-center justify-between mb-2 gap-1 flex-wrap">
               <p class="font-bold text-sm">Sottogeneri</p>
@@ -220,6 +220,25 @@
               <button onclick="deleteAllUnusedTags('modifiers')" class="text-red-500 text-[10px] font-semibold">Elimina tutti</button>
             </div>
             <div id="taxonomy-unused-modifiers" class="flex flex-col gap-1.5"></div>
+          </div>
+          <div class="ui-card border rounded-2xl p-4">
+            <div class="flex items-center justify-between mb-2 gap-1 flex-wrap">
+              <p class="font-bold text-sm">Nazionalità <span class="ui-muted font-normal">(Autori)</span></p>
+              <div class="flex gap-1">
+                <button onclick="mergeSelectedTags('nationalityTags')" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">Unisci</button>
+                <button onclick="linkSelectedTagsAsAliases('nationalityTags')" class="ui-btn-sec px-2 py-1 rounded-lg text-[11px] font-semibold">≈ Sinonimi</button>
+              </div>
+            </div>
+            <div class="flex gap-1 mb-2">
+              <input id="taxonomy-new-nationalityTags" type="text" placeholder="+ nuovo paese..." class="ui-input flex-1 p-1.5 rounded-lg border text-xs">
+              <button onclick="addNewTagToRegistry('nationalityTags')" class="ui-btn-sec px-2 rounded-lg text-xs font-semibold">+</button>
+            </div>
+            <div id="taxonomy-nationalityTags" class="flex flex-col gap-1.5"></div>
+            <div class="flex items-center justify-between mt-3 mb-1">
+              <p class="ui-muted text-[10px] font-bold uppercase tracking-wider">Non usati</p>
+              <button onclick="deleteAllUnusedTags('nationalityTags')" class="text-red-500 text-[10px] font-semibold">Elimina tutti</button>
+            </div>
+            <div id="taxonomy-unused-nationalityTags" class="flex flex-col gap-1.5"></div>
           </div>
         </div>
       </section>
@@ -354,6 +373,7 @@
   <datalist id="datalist-microgenres"></datalist>
   <datalist id="datalist-modifiers"></datalist>
   <datalist id="datalist-authors"></datalist>
+  <datalist id="datalist-nationality"></datalist>
 
   <!-- ===================== MODALE OPERA (L1) ===================== -->
   <div id="modal-opera" class="hidden fixed inset-0 z-50 flex items-end md:items-center justify-center">
@@ -626,6 +646,10 @@
           <p id="author-period-preview" class="ui-muted text-[11px] mt-1"></p>
         </div>
         <div>
+          <label class="text-xs font-semibold ui-muted">Nazionalità</label>
+          <input id="author-nationality" type="text" list="datalist-nationality" placeholder="es. Italia, Francia — se vuoto, verrà dedotta dalla biografia quando possibile" class="ui-input w-full p-2.5 rounded-xl border mt-1">
+        </div>
+        <div>
           <label class="text-xs font-semibold ui-muted">Biografia</label>
           <textarea id="author-biography" rows="5" class="ui-input w-full p-2.5 rounded-xl border mt-1" oninput="updateAuthorPeriodPreview()"></textarea>
         </div>
@@ -691,7 +715,7 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.26';
+const APP_VERSION = '1.27';
 
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 4; // bump da 3 a 4: nessun nuovo store, ma gli autori guadagnano i campi birthYear/periodTag
@@ -855,25 +879,139 @@ async function migratePeriodTagsIfNeeded() {
   await setSetting(PERIODTAG_MIGRATION_FLAG, true);
 }
 
+// --- NAZIONALITÀ AUTORE (nationalityTags) ------------------------------------------------
+// A differenza dell'anno di nascita, la nazionalità non compare nel testo con un pattern
+// regolare tipo "(1815-1885)": va cercata per parola chiave. Il dizionario qui sotto associa
+// ogni Paese alle forme aggettivali italiane più comuni (maschile/femminile/plurale) che
+// tendono a comparire nella prima parte della biografia ("Scrittore italiano...",
+// "Scrittrice britannica...", ecc.). È un'estrazione best-effort: copre bene i casi standard,
+// i casi ambigui o assenti restano con nationalityTags vuoto e vanno completati a mano.
+const NATIONALITY_ADJECTIVE_MAP = {
+  'Italia': ['italiano', 'italiana', 'italiani', 'italiane', 'italoamericano', 'italoamericana'],
+  'Francia': ['francese', 'francesi', 'franco-'],
+  'Regno Unito': ['britannico', 'britannica', 'britannici', 'britanniche', 'inglese', 'inglesi', 'scozzese', 'scozzesi', 'gallese', 'gallesi', 'nordirlandese'],
+  'Irlanda': ['irlandese', 'irlandesi'],
+  'Stati Uniti': ['statunitense', 'statunitensi', 'americano', 'americana', 'americani', 'americane'],
+  'Germania': ['tedesco', 'tedesca', 'tedeschi', 'tedesche'],
+  'Russia': ['russo', 'russa', 'russi', 'russe', 'sovietico', 'sovietica', 'sovietici'],
+  'Spagna': ['spagnolo', 'spagnola', 'spagnoli', 'spagnole'],
+  'Giappone': ['giapponese', 'giapponesi'],
+  'Cina': ['cinese', 'cinesi'],
+  'Brasile': ['brasiliano', 'brasiliana', 'brasiliani', 'brasiliane'],
+  'Argentina': ['argentino', 'argentina', 'argentini', 'argentine'],
+  'Canada': ['canadese', 'canadesi'],
+  'Svezia': ['svedese', 'svedesi'],
+  'Norvegia': ['norvegese', 'norvegesi'],
+  'Danimarca': ['danese', 'danesi'],
+  'Islanda': ['islandese', 'islandesi'],
+  'Finlandia': ['finlandese', 'finlandesi'],
+  'Polonia': ['polacco', 'polacca', 'polacchi', 'polacche'],
+  'Ungheria': ['ungherese', 'ungheresi'],
+  'Repubblica Ceca': ['ceco', 'ceca', 'cechi', 'ceche'],
+  'Austria': ['austriaco', 'austriaca', 'austriaci', 'austriache'],
+  'Svizzera': ['svizzero', 'svizzera', 'svizzeri', 'svizzere'],
+  'Belgio': ['belga', 'belghi'],
+  'Paesi Bassi': ['olandese', 'olandesi', 'neerlandese', 'neerlandesi'],
+  'Portogallo': ['portoghese', 'portoghesi'],
+  'Grecia': ['greco', 'greca', 'greci', 'greche'],
+  'Turchia': ['turco', 'turca', 'turchi', 'turche'],
+  'India': ['indiano', 'indiana', 'indiani', 'indiane'],
+  'Nigeria': ['nigeriano', 'nigeriana', 'nigeriani'],
+  'Sudafrica': ['sudafricano', 'sudafricana', 'sudafricani'],
+  'Israele': ['israeliano', 'israeliana', 'israeliani'],
+  'Corea del Sud': ['coreano', 'coreana', 'coreani'],
+  'Corea del Nord': ['nordcoreano', 'nordcoreana'],
+  'Australia': ['australiano', 'australiana', 'australiani'],
+  'Nuova Zelanda': ['neozelandese', 'neozelandesi'],
+  'Cile': ['cileno', 'cilena', 'cileni'],
+  'Colombia': ['colombiano', 'colombiana', 'colombiani'],
+  'Messico': ['messicano', 'messicana', 'messicani'],
+  'Perù': ['peruviano', 'peruviana', 'peruviani'],
+  'Cuba': ['cubano', 'cubana', 'cubani'],
+  'Egitto': ['egiziano', 'egiziana', 'egiziani'],
+  'Marocco': ['marocchino', 'marocchina', 'marocchini'],
+  'Algeria': ['algerino', 'algerina', 'algerini'],
+  'Iran': ['iraniano', 'iraniana', 'iraniani'],
+  'Libano': ['libanese', 'libanesi'],
+  'Kenya': ['keniota', 'keniano', 'keniani'],
+  'Zimbabwe': ['zimbabwiano', 'zimbabwiana'],
+  'Ucraina': ['ucraino', 'ucraina', 'ucraini'],
+  'Croazia': ['croato', 'croata', 'croati'],
+  'Serbia': ['serbo', 'serba', 'serbi'],
+  'Slovenia': ['sloveno', 'slovena', 'sloveni'],
+  'Romania': ['rumeno', 'rumena', 'rumeni'],
+  'Bulgaria': ['bulgaro', 'bulgara', 'bulgari'],
+  'Albania': ['albanese', 'albanesi'],
+  'Lituania': ['lituano', 'lituana', 'lituani'],
+  'Bosnia ed Erzegovina': ['bosniaco', 'bosniaca'],
+  'Vietnam': ['vietnamita', 'vietnamiti'],
+  'Filippine': ['filippino', 'filippina', 'filippini'],
+  'Indonesia': ['indonesiano', 'indonesiana', 'indonesiani'],
+  'Pakistan': ['pakistano', 'pakistana', 'pakistani'],
+  'Bangladesh': ['bangladese', 'bangladesi'],
+  'Grecia antica': ['greco antico', 'grecia antica'],
+};
+
+// Cerca solo nella prima porzione del testo (dove tipicamente compare "Scrittore/Scrittrice
+// NAZIONALITÀ...") per ridurre falsi positivi da menzioni successive non legate alla nazionalità
+// dell'autore stesso (es. "influenzato dalla letteratura russa" in una biografia non russa).
+function extractNationalityTagsFromBiography(biography) {
+  if (!biography || typeof biography !== 'string') return [];
+  const window = biography.slice(0, 220).toLowerCase();
+  const found = [];
+  for (const [country, adjectives] of Object.entries(NATIONALITY_ADJECTIVE_MAP)) {
+    const hit = adjectives.some(adj => {
+      const escaped = adj.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp('\\b' + escaped, 'i').test(window);
+    });
+    if (hit) found.push(country);
+  }
+  return found;
+}
+
+const NATIONALITYTAGS_MIGRATION_FLAG = 'migration_nationalityTags_v1_completed';
+async function migrateNationalityTagsIfNeeded() {
+  const alreadyDone = await getSetting(NATIONALITYTAGS_MIGRATION_FLAG, false);
+  if (alreadyDone) return;
+
+  const authors = await dbGetAll(STORE_AUTORI);
+  const allFound = new Set();
+  for (const author of authors) {
+    if (author.nationalityTags !== undefined) continue; // già valorizzato (manualmente o da run precedente)
+    const guessed = normalizeTagList(extractNationalityTagsFromBiography(author.biography));
+    author.nationalityTags = guessed;
+    guessed.forEach(t => allFound.add(t));
+    await dbSave(author, STORE_AUTORI);
+  }
+  await registerTagsInRegistry('nationalityTags', [...allFound]);
+  await setSetting(NATIONALITYTAGS_MIGRATION_FLAG, true);
+}
+
 // --- SCHEDE AUTORE (store "autori") ------------------------------------------------------
 // Entità indipendente dal campo libero "authors[]" delle Opere: una scheda autore raccoglie
 // biografia, tematiche e impatto letterario, e può essere collegata esplicitamente a una o più
 // Opere presenti nel catalogo. Il collegamento è tenuto lato Autore (linkedOperaIds) perché è
 // l'autore la "fonte di verità" della relazione: un'Opera non sa nulla delle schede a cui è
 // collegata, si interroga sempre a partire dall'autore.
-function newAuthorSkeleton({ name, photoBase64 = '', biography = '', themes = '', impact = '', linkedOperaIds = [], birthYear = null }) {
+function newAuthorSkeleton({ name, photoBase64 = '', biography = '', themes = '', impact = '', linkedOperaIds = [], birthYear = null, nationalityTags = null }) {
   const now = new Date().toISOString();
   // Se il chiamante non passa esplicitamente birthYear, prova a dedurlo dalla biografia
   // (utile sia per import JSON sia per la creazione manuale da modale).
   const resolvedBirthYear = birthYear !== null && birthYear !== undefined && birthYear !== ''
     ? Number(birthYear) : extractBirthYearFromBiography(biography);
+  // Stessa logica per la nazionalità: se non passata esplicitamente, prova a dedurla dalle prime
+  // righe della biografia; a differenza dell'anno, qui il risultato può avere più valori.
+  const resolvedNationalityTags = nationalityTags !== null && nationalityTags !== undefined
+    ? normalizeTagList(nationalityTags) : normalizeTagList(extractNationalityTagsFromBiography(biography));
   return { id: uid('author'), name: String(name).trim(), photoBase64, biography, themes, impact,
     linkedOperaIds: [...linkedOperaIds], birthYear: resolvedBirthYear, periodTag: bucketForBirthYear(resolvedBirthYear),
+    nationalityTags: resolvedNationalityTags,
     createdAt: now, updatedAt: now };
 }
 async function createAuthor(data) {
   const author = newAuthorSkeleton(data);
   await dbSave(author, STORE_AUTORI);
+  await registerTagsInRegistry('nationalityTags', author.nationalityTags || []);
   return author;
 }
 async function updateAuthor(authorId, patch) {
@@ -887,7 +1025,12 @@ async function updateAuthor(authorId, patch) {
     updated.birthYear = explicit !== null ? explicit : extractBirthYearFromBiography(updated.biography);
     updated.periodTag = bucketForBirthYear(updated.birthYear);
   }
+  // Nazionalità: normalizza sempre la lista in arrivo dal form (capitalizzazione, dedup).
+  if (patch.nationalityTags !== undefined) {
+    updated.nationalityTags = normalizeTagList(patch.nationalityTags);
+  }
   await dbSave(updated, STORE_AUTORI);
+  await registerTagsInRegistry('nationalityTags', updated.nationalityTags || []);
   return updated;
 }
 async function deleteAuthor(authorId) { return dbDelete(authorId, STORE_AUTORI); }
@@ -933,10 +1076,10 @@ async function refreshAuthorCardCache() {
   operaIdsWithAuthorCardCache = set;
 }
 
-async function getAllTags(level) {
-  const opere = await dbGetAll();
+async function getAllTags(level, storeName = STORE_OPERE) {
+  const records = await dbGetAll(storeName);
   const set = new Set();
-  opere.forEach(o => (o[level] || []).forEach(t => set.add(t)));
+  records.forEach(r => (r[level] || []).forEach(t => set.add(t)));
   return [...set].sort((a, b) => a.localeCompare(b, 'it'));
 }
 
@@ -954,14 +1097,24 @@ async function getAllInstanceCollanaValues() {
 }
 
 // --- GESTIONE TASSONOMIA (rinomina/eliminazione/fusione/alias/colori/spostamento tra livelli) --
+// Nota: queste funzioni operano di default sullo store "opere" (i tre livelli storici:
+// sottogenere/micro-genere/modificatore). Accettano un parametro storeName opzionale per essere
+// riusate anche su altri store con la stessa struttura a tag array-di-stringhe — ad oggi il caso
+// d'uso è lo store "autori" per il livello "nationalityTags" (Nazionalità).
 
 const TAXONOMY_LEVELS = ['subgenres', 'microgenres', 'modifiers'];
-const TAXONOMY_LEVEL_LABELS = { subgenres: 'Sottogenere', microgenres: 'Micro-genere', modifiers: 'Modificatore' };
+const TAXONOMY_LEVEL_LABELS = { subgenres: 'Sottogenere', microgenres: 'Micro-genere', modifiers: 'Modificatore', nationalityTags: 'Nazionalità' };
 
-async function getTagUsageCounts(level) {
-  const opere = await dbGetAll();
+// I tre livelli storici vivono sullo store "opere"; "nationalityTags" vive invece sullo store
+// "autori". Le funzioni di governance tag sotto sono generiche (accettano uno storeName), questo
+// helper decide quale store usare in base al livello, così le UI condivise (Tassonomia) restano
+// un'unica implementazione senza duplicare rinomina/fusione/alias/colore per gli autori.
+function taxonomyStoreForLevel(level) { return level === 'nationalityTags' ? STORE_AUTORI : STORE_OPERE; }
+
+async function getTagUsageCounts(level, storeName = STORE_OPERE) {
+  const records = await dbGetAll(storeName);
   const counts = new Map();
-  opere.forEach(o => (o[level] || []).forEach(t => counts.set(t, (counts.get(t) || 0) + 1)));
+  records.forEach(r => (r[level] || []).forEach(t => counts.set(t, (counts.get(t) || 0) + 1)));
   return [...counts.entries()].map(([tag, count]) => ({ tag, count })).sort((a, b) => a.tag.localeCompare(b.tag, 'it'));
 }
 
@@ -977,9 +1130,9 @@ async function registerTagsInRegistry(level, tags) {
   tags.forEach(t => { if (t && !set.has(t)) { set.add(t); changed = true; } });
   if (changed) await setSetting(key, [...set].sort((a, b) => a.localeCompare(b, 'it')));
 }
-async function getUnusedTags(level) {
+async function getUnusedTags(level, storeName = STORE_OPERE) {
   const registry = await getSetting('tagRegistry_' + level, []);
-  const used = new Set((await getTagUsageCounts(level)).map(r => r.tag));
+  const used = new Set((await getTagUsageCounts(level, storeName)).map(r => r.tag));
   return registry.filter(t => !used.has(t)).sort((a, b) => a.localeCompare(b, 'it'));
 }
 
@@ -1016,11 +1169,12 @@ async function renameTagInAliasGroups(level, oldTag, newTag) {
 }
 // Cache sincrona in memoria dei gruppi di alias, per poterli consultare durante il filtraggio del
 // Catalogo (che è sincrono) senza dover leggere da IndexedDB tag per tag ad ogni render.
-let tagAliasCache = { subgenres: [], microgenres: [], modifiers: [] };
+let tagAliasCache = { subgenres: [], microgenres: [], modifiers: [], nationalityTags: [] };
 async function refreshTagAliasCache() {
   tagAliasCache.subgenres = await getTagAliasGroups('subgenres');
   tagAliasCache.microgenres = await getTagAliasGroups('microgenres');
   tagAliasCache.modifiers = await getTagAliasGroups('modifiers');
+  tagAliasCache.nationalityTags = await getTagAliasGroups('nationalityTags');
 }
 function getTagAliasGroupSync(level, tag) {
   const groups = tagAliasCache[level] || [];
@@ -1039,23 +1193,24 @@ async function renameTagColorKey(level, oldTag, newTag) {
   const colors = await getTagColors(level);
   if (colors[oldTag] !== undefined) { colors[newTag] = colors[oldTag]; delete colors[oldTag]; await setSetting('tagColors_' + level, colors); }
 }
-let tagColorCache = { subgenres: {}, microgenres: {}, modifiers: {} };
+let tagColorCache = { subgenres: {}, microgenres: {}, modifiers: {}, nationalityTags: {} };
 async function refreshTagColorCache() {
   tagColorCache.subgenres = await getTagColors('subgenres');
   tagColorCache.microgenres = await getTagColors('microgenres');
   tagColorCache.modifiers = await getTagColors('modifiers');
+  tagColorCache.nationalityTags = await getTagColors('nationalityTags');
 }
 function getTagColorSync(level, tag) { return (tagColorCache[level] || {})[tag] || null; }
 
-async function renameTagEverywhere(level, oldTag, newTagRaw) {
+async function renameTagEverywhere(level, oldTag, newTagRaw, storeName = STORE_OPERE) {
   const newTag = normalizeTag(newTagRaw);
   if (!newTag || newTag === oldTag) return;
-  const opere = await dbGetAll();
-  for (const opera of opere) {
-    if (!(opera[level] || []).includes(oldTag)) continue;
-    opera[level] = addNormalizedTag(opera[level].filter(t => t !== oldTag), newTag);
-    opera.updatedAt = getLocalDateString();
-    await dbSave(opera);
+  const records = await dbGetAll(storeName);
+  for (const record of records) {
+    if (!(record[level] || []).includes(oldTag)) continue;
+    record[level] = addNormalizedTag(record[level].filter(t => t !== oldTag), newTag);
+    record.updatedAt = storeName === STORE_AUTORI ? new Date().toISOString() : getLocalDateString();
+    await dbSave(record, storeName);
   }
   const key = 'tagRegistry_' + level;
   const registry = (await getSetting(key, [])).filter(t => t !== oldTag);
@@ -1065,13 +1220,13 @@ async function renameTagEverywhere(level, oldTag, newTagRaw) {
   await renameTagColorKey(level, oldTag, newTag);
 }
 
-async function deleteTagEverywhere(level, tag) {
-  const opere = await dbGetAll();
-  for (const opera of opere) {
-    if (!(opera[level] || []).includes(tag)) continue;
-    opera[level] = opera[level].filter(t => t !== tag);
-    opera.updatedAt = getLocalDateString();
-    await dbSave(opera);
+async function deleteTagEverywhere(level, tag, storeName = STORE_OPERE) {
+  const records = await dbGetAll(storeName);
+  for (const record of records) {
+    if (!(record[level] || []).includes(tag)) continue;
+    record[level] = record[level].filter(t => t !== tag);
+    record.updatedAt = storeName === STORE_AUTORI ? new Date().toISOString() : getLocalDateString();
+    await dbSave(record, storeName);
   }
   const key = 'tagRegistry_' + level;
   await setSetting(key, (await getSetting(key, [])).filter(t => t !== tag));
@@ -1079,15 +1234,15 @@ async function deleteTagEverywhere(level, tag) {
   await setTagColor(level, tag, null);
 }
 
-async function mergeTagsEverywhere(level, tagsToMerge, canonicalNameRaw) {
+async function mergeTagsEverywhere(level, tagsToMerge, canonicalNameRaw, storeName = STORE_OPERE) {
   const canonical = normalizeTag(canonicalNameRaw);
   if (!canonical) return;
-  const opere = await dbGetAll();
-  for (const opera of opere) {
-    if (!(opera[level] || []).some(t => tagsToMerge.includes(t))) continue;
-    opera[level] = addNormalizedTag(opera[level].filter(t => !tagsToMerge.includes(t)), canonical);
-    opera.updatedAt = getLocalDateString();
-    await dbSave(opera);
+  const records = await dbGetAll(storeName);
+  for (const record of records) {
+    if (!(record[level] || []).some(t => tagsToMerge.includes(t))) continue;
+    record[level] = addNormalizedTag(record[level].filter(t => !tagsToMerge.includes(t)), canonical);
+    record.updatedAt = storeName === STORE_AUTORI ? new Date().toISOString() : getLocalDateString();
+    await dbSave(record, storeName);
   }
   const key = 'tagRegistry_' + level;
   const registry = (await getSetting(key, [])).filter(t => !tagsToMerge.includes(t));
@@ -1820,7 +1975,7 @@ async function renderFiltersPanel(suffix) {
 async function renderFiltersPanels() {
   let html;
   if (currentSection === 'catalogo') html = await renderFiltersPanel();
-  else if (currentSection === 'autori') html = renderAuthorFiltersPanel();
+  else if (currentSection === 'autori') html = await renderAuthorFiltersPanel();
   else html = `<p class="ui-muted text-xs">Nessun filtro disponibile per questa sezione.</p>`;
   document.getElementById('sidebar-filters-slot').innerHTML = html;
   document.getElementById('drawer-filters-slot').innerHTML = html;
@@ -2011,6 +2166,8 @@ async function initApp() {
     await refreshTagColorCache();
     await refreshAuthorCardCache();
     await migratePeriodTagsIfNeeded();
+    await migrateNationalityTagsIfNeeded();
+    await refreshTagDatalists();
 
     renderNav('nav-desktop-slot', { vertical: true });
     renderNav('nav-mobile-slot', { vertical: false });
@@ -2041,8 +2198,9 @@ function parseTagInput(str) {
 }
 
 async function refreshTagDatalists() {
-  const [subgenres, microgenres, modifiers, authors] = await Promise.all([
+  const [subgenres, microgenres, modifiers, authors, nationality] = await Promise.all([
     getAllTags('subgenres'), getAllTags('microgenres'), getAllTags('modifiers'), getAllTags('authors'),
+    getAllTags('nationalityTags', STORE_AUTORI),
   ]);
   const fill = (id, values) => {
     document.getElementById(id).innerHTML = values.map(v => `<option value="${v}">`).join('');
@@ -2051,6 +2209,7 @@ async function refreshTagDatalists() {
   fill('datalist-microgenres', microgenres);
   fill('datalist-modifiers', modifiers);
   fill('datalist-authors', authors);
+  fill('datalist-nationality', nationality);
 }
 
 // --- OPERA -------------------------------------------------------------------------------
@@ -2180,10 +2339,11 @@ async function deleteOperaFromModal() {
 // --- SCHEDE AUTORE (UI) --------------------------------------------------------------------
 
 let authorSearchQuery = '';
-let authorFilters = { periodTag: [] };
+let authorFilters = { periodTag: [], nationalityTags: [] };
 let authorSort = 'name-asc'; // 'name-asc' | 'period-asc' | 'created-desc' | 'linkedcount-desc'
 let authorPageSize = 25; // 10 | 25 | 50 | 'all'
 let authorPage = 1;
+let authorNationalityFilterOpen = false;
 
 async function toggleAuthorPeriodFilter(tag) {
   const list = authorFilters.periodTag;
@@ -2193,8 +2353,16 @@ async function toggleAuthorPeriodFilter(tag) {
   await renderFiltersPanels();
   await renderAutori();
 }
+async function toggleAuthorNationalityFilter(tag) {
+  const list = authorFilters.nationalityTags;
+  const idx = list.indexOf(tag);
+  if (idx === -1) list.push(tag); else list.splice(idx, 1);
+  authorPage = 1;
+  await renderFiltersPanels();
+  await renderAutori();
+}
 async function resetAuthorFilters() {
-  authorFilters = { periodTag: [] };
+  authorFilters = { periodTag: [], nationalityTags: [] };
   authorPage = 1;
   await renderFiltersPanels();
   await renderAutori();
@@ -2219,7 +2387,8 @@ async function goToAuthorPage(page) {
 
 // Ritorna l'HTML del pannello filtri Autori: stesso ruolo di renderFiltersPanel() per il
 // Catalogo, ma con i soli campi che ha senso filtrare/ordinare sulle schede autore.
-function renderAuthorFiltersPanel() {
+async function renderAuthorFiltersPanel() {
+  const nationalityValues = await getAllTags('nationalityTags', STORE_AUTORI);
   return `
     <p class="text-[10px] font-bold uppercase tracking-wider ui-accent-text mb-2">Filtri Autori</p>
 
@@ -2227,6 +2396,15 @@ function renderAuthorFiltersPanel() {
     <div class="flex flex-wrap gap-1 mb-3">
       ${PERIOD_TAG_ORDER.map(tag => pillButton(tag, authorFilters.periodTag.includes(tag), `toggleAuthorPeriodFilter('${tag.replace(/'/g, "\\'")}')`)).join('')}
     </div>
+
+    <details class="mb-3" ${authorNationalityFilterOpen ? 'open' : ''} ontoggle="authorNationalityFilterOpen = this.open">
+      <summary class="ui-muted text-[10px] font-semibold cursor-pointer select-none">Nazionalità</summary>
+      <div class="flex flex-wrap gap-1 mt-1.5">
+        ${nationalityValues.length
+          ? nationalityValues.map(v => pillButton(v, authorFilters.nationalityTags.includes(v), `toggleAuthorNationalityFilter('${v.replace(/'/g, "\\'")}')`)).join('')
+          : '<p class="ui-muted text-[11px]">Nessuna nazionalità ancora assegnata.</p>'}
+      </div>
+    </details>
 
     <p class="ui-muted text-[10px] font-semibold mb-1">Autori per pagina</p>
     <select onchange="setAuthorPageSize(this.value)" class="author-pagesize-select ui-input w-full p-2 rounded-lg border text-xs mb-3">
@@ -2261,6 +2439,7 @@ function authorCardHtml(author) {
         <div class="flex items-center gap-2 flex-wrap mt-1">
           <p class="text-[10px] ui-accent-text font-semibold">${(author.linkedOperaIds || []).length} opera/e collegate</p>
           <span class="text-[10px] ui-btn-sec px-1.5 py-0.5 rounded-md">${author.periodTag || PERIOD_UNSPECIFIED}</span>
+          ${(author.nationalityTags || []).map(t => `<span class="text-[10px] ui-btn-sec px-1.5 py-0.5 rounded-md" style="${getTagColorSync('nationalityTags', t) ? `background-color:${getTagColorSync('nationalityTags', t)}22; border-color:${getTagColorSync('nationalityTags', t)}` : ''}">${t}</span>`).join('')}
         </div>
       </div>
     </div>`;
@@ -2303,10 +2482,13 @@ async function renderAutori() {
   if (authorFilters.periodTag.length) {
     filtered = filtered.filter(a => authorFilters.periodTag.includes(a.periodTag || PERIOD_UNSPECIFIED));
   }
+  if (authorFilters.nationalityTags.length) {
+    filtered = filtered.filter(a => matchesTagFilter(authorFilters.nationalityTags, a.nationalityTags || [], 'nationalityTags'));
+  }
   filtered = sortAuthorsList(filtered);
 
   const countEl = document.getElementById('autori-count');
-  const hasActiveFilters = q || authorFilters.periodTag.length;
+  const hasActiveFilters = q || authorFilters.periodTag.length || authorFilters.nationalityTags.length;
   if (countEl) countEl.textContent = hasActiveFilters ? `${filtered.length} autore/i trovati su ${authors.length} totali` : `${authors.length} autore/i in archivio`;
 
   const paginationEl = document.getElementById('autori-pagination');
@@ -2397,12 +2579,14 @@ async function openAuthorModal(authorId = null) {
   document.getElementById('author-link-opera-search').value = '';
   document.getElementById('author-link-opera-results').innerHTML = '';
   setAuthorPhotoPreview('');
+  refreshTagDatalists();
 
   if (authorId) {
     document.getElementById('modal-author-title').textContent = 'Modifica Scheda Autore';
     const author = await dbGet(authorId, STORE_AUTORI);
     document.getElementById('author-name').value = author.name || '';
     document.getElementById('author-birth-year').value = (author.birthYear !== null && author.birthYear !== undefined) ? author.birthYear : '';
+    document.getElementById('author-nationality').value = (author.nationalityTags || []).join(', ');
     document.getElementById('author-biography').value = author.biography || '';
     document.getElementById('author-themes').value = author.themes || '';
     document.getElementById('author-impact').value = author.impact || '';
@@ -2410,7 +2594,7 @@ async function openAuthorModal(authorId = null) {
     authorModalLinkedOperaIds = [...(author.linkedOperaIds || [])];
   } else {
     document.getElementById('modal-author-title').textContent = 'Nuova Scheda Autore';
-    ['author-name','author-birth-year','author-biography','author-themes','author-impact'].forEach(id => document.getElementById(id).value = '');
+    ['author-name','author-birth-year','author-nationality','author-biography','author-themes','author-impact'].forEach(id => document.getElementById(id).value = '');
     authorModalLinkedOperaIds = [];
   }
   updateAuthorPeriodPreview();
@@ -2481,10 +2665,12 @@ async function saveAuthorFromForm() {
     photoBase64: authorPhotoPreviewBase64,
     linkedOperaIds: [...authorModalLinkedOperaIds],
     birthYear: birthYearRaw !== '' ? Number(birthYearRaw) : null,
+    nationalityTags: parseTagInput(document.getElementById('author-nationality').value),
   };
 
   if (authorId) { await updateAuthor(authorId, data); } else { await createAuthor(data); }
   await refreshAuthorCardCache();
+  await refreshTagDatalists();
   closeModal('modal-author');
   await renderAutori();
   await refreshOperaAuthorLinks();
@@ -3323,8 +3509,11 @@ let taxonomySearchQuery = '';
 
 function taxonomyRow(level, tag, count, colorHex, aliasGroup) {
   const others = (aliasGroup || []).filter(t => t !== tag);
-  const moveOptions = TAXONOMY_LEVELS.filter(l => l !== level)
-    .map(l => `<option value="${l}">→ ${TAXONOMY_LEVEL_LABELS[l]}</option>`).join('');
+  // Lo spostamento "↔" ha senso solo tra i tre livelli condivisi dallo store Opere: la Nazionalità
+  // vive su un altro store (Autori) e non è un livello di destinazione/origine valido per loro.
+  const showMoveControl = level !== 'nationalityTags';
+  const moveOptions = showMoveControl ? TAXONOMY_LEVELS.filter(l => l !== level)
+    .map(l => `<option value="${l}">→ ${TAXONOMY_LEVEL_LABELS[l]}</option>`).join('') : '';
   return `
     <div class="ui-input border rounded-lg px-2 py-1.5 text-xs">
       <div class="flex items-center justify-between gap-2">
@@ -3332,13 +3521,13 @@ function taxonomyRow(level, tag, count, colorHex, aliasGroup) {
           <input type="checkbox" data-merge="${level}" value="${tag}" class="shrink-0">
           <input type="color" value="${colorHex || '#94a3b8'}" onchange="setTagColorFromUI('${level}','${tag}',this.value)" title="Colore del tag" class="w-4 h-4 shrink-0 rounded-full border-0 p-0 cursor-pointer">
           <span class="truncate">${tag}</span>
-          <button type="button" onclick="viewTagInCatalog('${level}','${tag}')" title="Vedi nel Catalogo" class="ui-accent-text font-semibold shrink-0">(${count})</button>
+          <button type="button" onclick="viewTagInContext('${level}','${tag}')" title="${level === 'nationalityTags' ? 'Vedi negli Autori' : 'Vedi nel Catalogo'}" class="ui-accent-text font-semibold shrink-0">(${count})</button>
         </label>
         <div class="flex gap-1 shrink-0">
-          <select onchange="moveTagToLevelFromUI('${level}', this.value, '${tag}')" title="Sposta di livello" class="ui-btn-sec rounded-md text-[10px] px-1 py-0.5">
+          ${showMoveControl ? `<select onchange="moveTagToLevelFromUI('${level}', this.value, '${tag}')" title="Sposta di livello" class="ui-btn-sec rounded-md text-[10px] px-1 py-0.5">
             <option value="">↔</option>
             ${moveOptions}
-          </select>
+          </select>` : ''}
           <button type="button" onclick="renameTagPrompt('${level}','${tag}')" class="ui-btn-sec w-6 h-6 rounded-md text-[10px]">✎</button>
           <button type="button" onclick="deleteTagPrompt('${level}','${tag}',${count})" class="text-red-500 text-[10px] font-semibold px-1">🗑</button>
         </div>
@@ -3356,7 +3545,8 @@ function unusedTagRow(level, tag) {
 }
 
 async function renderTaxonomyLevel(level, containerId) {
-  const [rows, colors] = await Promise.all([getTagUsageCounts(level), getTagColors(level)]);
+  const storeName = taxonomyStoreForLevel(level);
+  const [rows, colors] = await Promise.all([getTagUsageCounts(level, storeName), getTagColors(level)]);
   const query = taxonomySearchQuery.toLowerCase();
   const filtered = query ? rows.filter(r => r.tag.toLowerCase().includes(query)) : rows;
   const el = document.getElementById(containerId);
@@ -3369,7 +3559,8 @@ async function renderTaxonomyLevel(level, containerId) {
 }
 
 async function renderUnusedTagsLevel(level, containerId) {
-  let unused = await getUnusedTags(level);
+  const storeName = taxonomyStoreForLevel(level);
+  let unused = await getUnusedTags(level, storeName);
   const query = taxonomySearchQuery.toLowerCase();
   if (query) unused = unused.filter(t => t.toLowerCase().includes(query));
   const el = document.getElementById(containerId);
@@ -3381,9 +3572,11 @@ async function renderTassonomia() {
     renderTaxonomyLevel('subgenres', 'taxonomy-subgenres'),
     renderTaxonomyLevel('microgenres', 'taxonomy-microgenres'),
     renderTaxonomyLevel('modifiers', 'taxonomy-modifiers'),
+    renderTaxonomyLevel('nationalityTags', 'taxonomy-nationalityTags'),
     renderUnusedTagsLevel('subgenres', 'taxonomy-unused-subgenres'),
     renderUnusedTagsLevel('microgenres', 'taxonomy-unused-microgenres'),
     renderUnusedTagsLevel('modifiers', 'taxonomy-unused-modifiers'),
+    renderUnusedTagsLevel('nationalityTags', 'taxonomy-unused-nationalityTags'),
   ]);
 }
 
@@ -3397,18 +3590,20 @@ async function afterTaxonomyChange() {
   await refreshTagDatalists();
   await renderFiltersPanels();
   await renderCatalogo();
+  await renderAutori();
 }
 
 async function renameTagPrompt(level, tag) {
   const newTag = prompt(`Rinomina "${tag}" in:`, tag);
   if (newTag === null || !newTag.trim() || newTag.trim() === tag) return;
-  await renameTagEverywhere(level, tag, newTag);
+  await renameTagEverywhere(level, tag, newTag, taxonomyStoreForLevel(level));
   await afterTaxonomyChange();
 }
 
 async function deleteTagPrompt(level, tag, count) {
-  if (!confirm(`Eliminare "${tag}"? Verrà rimosso da ${count} opera/e.`)) return;
-  await deleteTagEverywhere(level, tag);
+  const targetLabel = level === 'nationalityTags' ? 'autore/i' : 'opera/e';
+  if (!confirm(`Eliminare "${tag}"? Verrà rimosso da ${count} ${targetLabel}.`)) return;
+  await deleteTagEverywhere(level, tag, taxonomyStoreForLevel(level));
   await afterTaxonomyChange();
 }
 
@@ -3417,7 +3612,7 @@ async function mergeSelectedTags(level) {
   if (checked.length < 2) { alert('Seleziona almeno due tag da unire.'); return; }
   const canonical = prompt(`Unisci ${checked.join(', ')} in un unico tag chiamato:`, checked[0]);
   if (canonical === null || !canonical.trim()) return;
-  await mergeTagsEverywhere(level, checked, canonical);
+  await mergeTagsEverywhere(level, checked, canonical, taxonomyStoreForLevel(level));
   await afterTaxonomyChange();
 }
 
@@ -3471,9 +3666,18 @@ async function deleteAllUnusedTags(level) {
   await renderTassonomia();
 }
 
-// Passa al Catalogo mostrando solo le Opere che hanno questo tag (sostituisce, non aggiunge,
-// l'eventuale filtro già impostato per quel livello).
-async function viewTagInCatalog(level, tag) {
+// Passa alla sezione pertinente mostrando solo i record che hanno questo tag: Catalogo per i tre
+// livelli storici (sostituisce, non aggiunge, l'eventuale filtro già impostato per quel livello),
+// Autori per la Nazionalità.
+async function viewTagInContext(level, tag) {
+  if (level === 'nationalityTags') {
+    authorFilters = { periodTag: [], nationalityTags: [tag] };
+    authorPage = 1;
+    switchSection('autori');
+    await renderFiltersPanels();
+    await renderAutori();
+    return;
+  }
   catalogFilters = { search: '', macro: [], subgenres: [], microgenres: [], modifiers: [], status: [], ownership: [], format: [], recentDays: null, series: [], collana: [], rating: [], authorCard: [] };
   catalogFilters[level] = [tag];
   catalogPage = 1;
