@@ -122,20 +122,20 @@
     pointer-events: none;
   }
   .book-spine-text {
-    position: absolute; inset: 5px 2px 4px 2px;
-    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-    gap: 4px;
+    position: absolute; inset: 4px 3px;
+    display: flex; flex-direction: row; align-items: flex-start; justify-content: flex-start;
+    gap: 3px;
     pointer-events: none;
   }
   .book-spine-line {
     writing-mode: vertical-rl; transform: rotate(180deg);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     letter-spacing: 0.01em;
-    min-height: 0;
-    width: 100%;
+    height: 100%;
+    min-width: 0;
   }
-  .book-spine-author { font-size: 8.5px; font-weight: 500; opacity: .82; flex: 0 0 30%; }
-  .book-spine-title-line { font-size: 10.5px; font-weight: 700; line-height: 1.15; flex: 1 1 auto; }
+  .book-spine-author { font-size: 8.5px; font-weight: 500; opacity: .82; flex: 0 0 auto; }
+  .book-spine-title-line { font-size: 10.5px; font-weight: 700; line-height: 1.15; flex: 1 1 0; }
   .shelf-view-toggle button.active { background-color: var(--theme-accent); color: #fff; }
 </style>
 </head>
@@ -809,7 +809,7 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.31';
+const APP_VERSION = '1.32';
 
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 5; // bump da 4 a 5: nuovo store "diario" (eventi cronologici di lettura/modifica),
@@ -4209,6 +4209,10 @@ function spineWidthPx(totalPages) {
   return Math.round(Math.min(SPINE_MAX_PX, Math.max(SPINE_MIN_PX, SPINE_MIN_PX + pages * SPINE_PX_PER_PAGE)));
 }
 
+// Sotto questa larghezza (in px) un dorso è troppo stretto per ospitare due colonne di testo
+// verticale affiancate (autore + titolo): mostra solo il titolo, come su un vero dorso sottile.
+const SPINE_AUTHOR_COLUMN_MIN_WIDTH = 34;
+
 function renderShelfSpine(opera, instanceFilterActive) {
   const inst = getRepresentativeInstance(opera, instanceFilterActive);
   const width = spineWidthPx(inst ? inst.totalPages : 0);
@@ -4217,6 +4221,7 @@ function renderShelfSpine(opera, instanceFilterActive) {
     ? `width:${width}px; background-image:url('${inst.coverBase64}'); background-size:auto 100%; background-position:center;`
     : `width:${width}px; background-color:${spineColorForOpera(opera)};`;
   const authors = getOperaAuthors(opera);
+  const showAuthorColumn = authors.length && width >= SPINE_AUTHOR_COLUMN_MIN_WIDTH;
   const authorLabel = authors.length ? authors[0] : '';
   const tooltip = authorLabel ? `${authorLabel} — ${opera.title}` : opera.title;
   const textColorStyle = `color:${hasCover ? '#fff' : '#f5f0e6'}; ${hasCover ? 'text-shadow:0 1px 3px rgba(0,0,0,.8);' : ''}`;
@@ -4224,7 +4229,7 @@ function renderShelfSpine(opera, instanceFilterActive) {
     <div class="book-spine" style="${bgStyle}" onclick="openShelfPreview('${opera.id}')" title="${tooltip.replace(/"/g, '&quot;')}">
       ${hasCover ? '<div class="book-spine-overlay"></div>' : ''}
       <div class="book-spine-text" style="${textColorStyle}">
-        ${authorLabel ? `<span class="book-spine-line book-spine-author">${authorLabel}</span>` : ''}
+        ${showAuthorColumn ? `<span class="book-spine-line book-spine-author">${authorLabel}</span>` : ''}
         <span class="book-spine-line book-spine-title-line">${opera.title}</span>
       </div>
     </div>`;
