@@ -229,7 +229,8 @@
           <h2 class="text-xl font-bold">Diario</h2>
         </div>
         <p class="ui-muted text-sm mb-2">Cronologia di letture, inserimenti e modifiche. Usa "☰ Filtri" per restringere per tipo evento, autore o intervallo di date.</p>
-        <p id="diario-count" class="ui-muted text-xs mb-3"></p>
+        <p id="diario-count" class="ui-muted text-xs mb-2"></p>
+        <div id="diario-bulk-delete-bar" class="mb-3"></div>
         <div id="diario-list" class="flex flex-col gap-2"></div>
         <div id="diario-pagination" class="flex items-center justify-center gap-2 mt-4 mb-16 md:mb-6"></div>
       </section>
@@ -809,7 +810,7 @@
    ===================================================================================== */
 
 // Versione dell'applicazione: da qui in poi si aggiorna la minor version ad ogni cambiamento.
-const APP_VERSION = '1.32';
+const APP_VERSION = '1.33';
 
 const DB_NAME = 'OperaCodexDB';
 const DB_VERSION = 5; // bump da 4 a 5: nuovo store "diario" (eventi cronologici di lettura/modifica),
@@ -3115,6 +3116,31 @@ async function confirmDeleteDiaryEvent(eventId) {
   await renderDiario();
 }
 
+// Elimina in blocco SOLO gli eventi effettivamente visibili nella pagina corrente (cioè quelli
+// passati per ultimi a diaryEventCardHtml in renderDiario), non l'intero risultato filtrato.
+// Il pulsante compare solo quando c'è almeno un filtro Diario attivo, per evitare cancellazioni
+// di massa accidentali sull'intero Diario non filtrato.
+let diaryVisibleEventIds = [];
+function renderDiaryBulkDeleteBar(hasActiveFilters, pageItems) {
+  const bar = document.getElementById('diario-bulk-delete-bar');
+  if (!bar) return;
+  diaryVisibleEventIds = pageItems.map(e => e.id);
+  if (!hasActiveFilters || !pageItems.length) { bar.innerHTML = ''; return; }
+  bar.innerHTML = `
+    <button type="button" onclick="confirmDeleteFilteredDiaryEvents()"
+      class="ui-btn-sec text-red-500 px-3 py-1.5 rounded-lg text-[11px] font-semibold">
+      🗑️ Elimina i ${pageItems.length} eventi visibili in questa pagina
+    </button>`;
+}
+
+async function confirmDeleteFilteredDiaryEvents() {
+  const ids = diaryVisibleEventIds;
+  if (!ids.length) return;
+  if (!confirm(`Rimuovere questi ${ids.length} eventi dal Diario (solo quelli visibili in questa pagina con i filtri attuali)? Non riguarda le Opere/Autori collegati, solo le voci di cronologia. L'azione non è reversibile.`)) return;
+  for (const id of ids) { await deleteDiaryEvent(id); }
+  await renderDiario();
+}
+
 async function renderDiario() {
   const container = document.getElementById('diario-list');
   if (!container) return;
@@ -3139,6 +3165,7 @@ async function renderDiario() {
   if (countEl) countEl.textContent = hasActiveFilters ? `${filtered.length} eventi trovati su ${events.length} totali` : `${events.length} eventi nel Diario`;
 
   const paginationEl = document.getElementById('diario-pagination');
+  const bulkBarEl = document.getElementById('diario-bulk-delete-bar');
 
   if (!events.length) {
     container.innerHTML = `
@@ -3148,6 +3175,7 @@ async function renderDiario() {
         <p class="ui-muted text-sm">Inizia ad aggiungere Opere e registrare le tue letture: appariranno qui in ordine cronologico.</p>
       </div>`;
     if (paginationEl) paginationEl.innerHTML = '';
+    if (bulkBarEl) bulkBarEl.innerHTML = '';
     return;
   }
   if (!filtered.length) {
@@ -3158,6 +3186,7 @@ async function renderDiario() {
         <p class="ui-muted text-sm">Prova ad azzerare i filtri dal pannello "☰ Filtri".</p>
       </div>`;
     if (paginationEl) paginationEl.innerHTML = '';
+    if (bulkBarEl) bulkBarEl.innerHTML = '';
     return;
   }
 
@@ -3166,6 +3195,8 @@ async function renderDiario() {
   diaryPage = Math.min(Math.max(1, diaryPage), totalPages);
   const startIdx = (diaryPage - 1) * pageSize;
   const pageItems = diaryPageSize === 'all' ? filtered : filtered.slice(startIdx, startIdx + pageSize);
+
+  renderDiaryBulkDeleteBar(hasActiveFilters, pageItems);
 
   let html = '';
   let lastDay = null;
