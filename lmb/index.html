@@ -607,8 +607,8 @@
     if (len > 0.001) {
       moveX /= len; moveY /= len;
 
-      const forwardX = Math.sin(yaw), forwardZ = -Math.cos(yaw);
-      const rightX = Math.cos(yaw), rightZ = Math.sin(yaw);
+      const forwardX = -Math.sin(yaw), forwardZ = -Math.cos(yaw);
+      const rightX = Math.cos(yaw), rightZ = -Math.sin(yaw);
 
       const dx = (forwardX * -moveY + rightX * moveX) * MOVE_SPEED * dt;
       const dz = (forwardZ * -moveY + rightZ * moveX) * MOVE_SPEED * dt;
