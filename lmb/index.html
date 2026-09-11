@@ -195,7 +195,9 @@
 
   // Dorsi individuali e interazione (Fase 4)
   const SPINE_DEPTH = UNIT_DEPTH * 0.75;
-  const SHELF_BOARD_THICKNESS = 0.02;
+  const SHELF_BOARD_THICKNESS = 0.03;
+  const BOOKS_PER_SHELF = 30;              // deve restare coerente con generate_layout.py
+  const SPINE_WIDTH = (UNIT_WIDTH * 0.9) / BOOKS_PER_SHELF; // larghezza fissa di un dorso
   const INTERACT_MAX_DIST = 2.3;
 
   // ------------------------------------------------------------------
@@ -527,7 +529,7 @@
   // e tutti i ripiani (anche vuoti, se non ci sono abbastanza libri per riempirli).
   function buildCorridorBooks(corridor, toWorld, rotationY, color) {
     const bookMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.75 });
-    const boardMat = new THREE.MeshStandardMaterial({ color: 0x241b12, roughness: 0.9 });
+    const boardMat = new THREE.MeshStandardMaterial({ color: 0x6b4a30, roughness: 0.85 });
 
     const totalBooks = corridor.bookCount;
     const booksMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), bookMat, Math.max(totalBooks, 1));
@@ -571,16 +573,15 @@
         const n = shelf.books.length;
         if (n === 0) return;
         const usableWidth = UNIT_WIDTH * 0.9;
-        const spineWidth = usableWidth / n;
 
         shelf.books.forEach(function (book, i) {
-          const localAlong = unit.position.x - usableWidth / 2 + spineWidth * (i + 0.5);
+          const localAlong = unit.position.x - usableWidth / 2 + SPINE_WIDTH * (i + 0.5);
           const wb = toWorld(localAlong, unit.position.z);
           const spineHeight = 0.17 + hash01(book.instanceId) * 0.10;
 
           dummy.position.set(wb.x, shelf.heightM + SHELF_BOARD_THICKNESS / 2 + spineHeight / 2, wb.z);
           dummy.rotation.set(0, rotationY, 0);
-          dummy.scale.set(spineWidth * 0.92, spineHeight, SPINE_DEPTH);
+          dummy.scale.set(SPINE_WIDTH * 0.85, spineHeight, SPINE_DEPTH);
           dummy.updateMatrix();
           booksMesh.setMatrixAt(bookIndex, dummy.matrix);
 
