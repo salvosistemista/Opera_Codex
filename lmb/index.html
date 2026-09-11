@@ -29,6 +29,52 @@
     font-size:14px; opacity:0.75; text-align:center; text-shadow:0 1px 4px rgba(0,0,0,0.8);
   }
 
+  #interact-prompt {
+    position:absolute; top:57%; left:50%; transform:translateX(-50%);
+    font-size:15px; text-shadow:0 1px 6px rgba(0,0,0,0.9); display:none;
+    background:rgba(20,14,8,0.45); padding:5px 14px; border-radius:2px;
+  }
+
+  #mobile-pickup-btn {
+    position:absolute; bottom:130px; left:50%; transform:translateX(-50%);
+    background:rgba(241,230,210,0.92); color:#241a10; padding:12px 22px;
+    border-radius:24px; font-size:15px; display:none; pointer-events:auto;
+    z-index:11; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,0.4);
+  }
+
+  #book-panel {
+    position:fixed; inset:0; z-index:30; display:none;
+    align-items:center; justify-content:center; color:#f1e6d2;
+  }
+  #book-panel-backdrop { position:absolute; inset:0; background:rgba(10,7,4,0.82); }
+  #book-panel-content {
+    position:relative; background:#1c150d; max-width:720px; width:90%; max-height:82vh;
+    overflow-y:auto; border-radius:4px; padding:28px; display:flex; gap:22px;
+    border:1px solid rgba(241,230,210,0.15); box-shadow:0 20px 60px rgba(0,0,0,0.6);
+  }
+  #panel-close {
+    position:absolute; top:8px; right:12px; background:none; border:none;
+    color:#f1e6d2; font-size:26px; cursor:pointer; line-height:1; opacity:0.7;
+  }
+  #panel-cover-wrap { flex:0 0 190px; }
+  #panel-cover { width:100%; border-radius:2px; box-shadow:0 6px 18px rgba(0,0,0,0.5); display:none; }
+  #panel-cover-placeholder {
+    width:100%; aspect-ratio:2/3; background:#2a2016; border-radius:2px;
+    display:flex; align-items:center; justify-content:center; font-size:46px;
+  }
+  #panel-info { flex:1; min-width:0; }
+  #panel-title { font-size:21px; margin:2px 0 6px; }
+  #panel-authors { font-size:15px; opacity:0.8; font-style:italic; margin-bottom:10px; }
+  #panel-tags { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  .panel-tag { background:rgba(241,230,210,0.12); padding:3px 10px; border-radius:12px; font-size:12px; }
+  #panel-meta { font-size:13px; opacity:0.6; margin-bottom:14px; }
+  #panel-description { font-size:15px; line-height:1.6; white-space:pre-wrap; }
+
+  @media (max-width: 640px) {
+    #book-panel-content { flex-direction:column; padding:20px; max-height:88vh; }
+    #panel-cover-wrap { flex:0 0 auto; width:140px; margin:0 auto; }
+  }
+
   #loading {
     position:fixed; inset:0; background:#0d0906; color:#f1e6d2;
     display:flex; flex-direction:column; align-items:center; justify-content:center;
@@ -67,7 +113,7 @@
 
 <div id="start-overlay">
   <div id="start-text">Tocca per entrare</div>
-  <div class="sub">Desktop: clic per bloccare il mouse, WASD per muoversi, mouse per guardarti attorno, ESC per uscire dal controllo.<br>Mobile: joystick a sinistra per muoverti, trascina a destra per guardarti attorno.</div>
+  <div class="sub">Desktop: clic per bloccare il mouse, WASD per muoversi, mouse per guardarti attorno, E per prendere in mano un libro, ESC per uscire.<br>Mobile: joystick a sinistra per muoverti, trascina a destra per guardarti attorno, tocca "Prendi in mano" quando appare.</div>
 </div>
 
 <div id="canvas-container"></div>
@@ -75,6 +121,7 @@
 <div id="hud">
   <div id="room-label"></div>
   <div id="crosshair"></div>
+  <div id="interact-prompt"></div>
   <div id="hint"></div>
 </div>
 
@@ -83,6 +130,25 @@
     <div id="joystick-base"><div id="joystick-nub"></div></div>
   </div>
   <div id="look-zone"></div>
+  <div id="mobile-pickup-btn">📖 Prendi in mano</div>
+</div>
+
+<div id="book-panel">
+  <div id="book-panel-backdrop"></div>
+  <div id="book-panel-content">
+    <button id="panel-close" aria-label="Chiudi">×</button>
+    <div id="panel-cover-wrap">
+      <img id="panel-cover" src="" alt="">
+      <div id="panel-cover-placeholder">📕</div>
+    </div>
+    <div id="panel-info">
+      <h2 id="panel-title"></h2>
+      <div id="panel-authors"></div>
+      <div id="panel-tags"></div>
+      <div id="panel-meta"></div>
+      <div id="panel-description"></div>
+    </div>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -126,6 +192,11 @@
     0x8c3b3b, 0x5c3b8c, 0x3b8c3b, 0x8c6b3b, 0x3b7a8c,
   ];
 
+  // Dorsi individuali e interazione (Fase 4)
+  const SPINE_DEPTH = UNIT_DEPTH * 0.75;
+  const SHELF_BOARD_THICKNESS = 0.02;
+  const INTERACT_MAX_DIST = 2.3;
+
   // ------------------------------------------------------------------
   // Stato globale
   // ------------------------------------------------------------------
@@ -146,6 +217,13 @@
   let joystickTouchId = null;
   let lookTouchId = null;
   let lastLookPos = { x: 0, y: 0 };
+
+  // interazione con i libri
+  let catalogById = new Map();
+  const interactiveGroups = []; // { mesh, refs, center, radius }
+  let targetedBook = null;      // { ref, group }
+  let uiOpen = false;
+  const raycaster = new THREE.Raycaster();
 
   // ------------------------------------------------------------------
   // Avvio
@@ -171,21 +249,41 @@
     setupLighting();
     setupInput();
 
-    fetch('./data/layout.json')
-      .then(function (r) {
-        if (!r.ok) throw new Error('HTTP ' + r.status);
+    Promise.all([
+      fetch('./data/layout.json').then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' su layout.json');
         return r.json();
-      })
-      .then(function (layout) {
-        buildWorld(layout);
+      }),
+      fetch('./data/catalogo.json').then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status + ' su catalogo.json');
+        return r.json();
+      }),
+    ])
+      .then(function (results) {
+        buildCatalogIndex(results[1]);
+        buildWorld(results[0]);
         document.getElementById('loading').style.display = 'none';
         showStartOverlay();
         animate();
       })
       .catch(function (err) {
         document.getElementById('loading-text').textContent =
-          'Impossibile caricare data/layout.json (' + err.message + ')';
+          'Impossibile caricare i dati della biblioteca (' + err.message + ')';
       });
+  }
+
+  function buildCatalogIndex(catalogo) {
+    catalogo.forEach(function (opera) { catalogById.set(opera.id, opera); });
+  }
+
+  function findBookDetails(operaId, instanceId) {
+    const opera = catalogById.get(operaId);
+    if (!opera) return null;
+    let instance = null;
+    for (let e = 0; e < opera.editions.length && !instance; e++) {
+      instance = opera.editions[e].instances.find(function (inst) { return inst.id === instanceId; }) || null;
+    }
+    return { opera: opera, instance: instance };
   }
 
   function onResize() {
@@ -359,9 +457,12 @@
     buildRoomWalls(side, minX, maxX, minZ, maxZ, wallMat);
 
     // Corridoi e scaffalature
+    const rotationY = (side === "E" || side === "W") ? Math.PI / 2 : 0;
     room.corridors.forEach(function (corridor, ci) {
       const color = PALETTE[ci % PALETTE.length];
-      buildCorridorPlaceholder(corridor, toWorld, color);
+      addCorridorColliders(corridor, toWorld);
+      buildCorridorBooks(corridor, toWorld, rotationY, color);
+      addCorridorLabel(corridor.label, corridor.bookCount, toWorld(-0.9, 0));
     });
 
     // Un lume caldo ogni ~10 metri lungo la sala
@@ -401,34 +502,84 @@
     });
   }
 
-  // Segnaposto per una scaffalatura: un box per ogni "unit" del corridoio, colorato per genere.
-  // La copertina reale e il libro-per-libro arrivano nella Fase 4.
-  function buildCorridorPlaceholder(corridor, toWorld, color) {
-    const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.8 });
-    const geo = new THREE.BoxGeometry(UNIT_WIDTH * 0.94, UNIT_HEIGHT, UNIT_DEPTH);
+  function hash01(str) {
+    let h = 0;
+    for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+    return (h % 1000) / 1000;
+  }
 
-    const count = corridor.units.length;
-    const mesh = new THREE.InstancedMesh(geo, mat, count);
-    const dummy = new THREE.Object3D();
-
-    corridor.units.forEach(function (unit, i) {
+  // Collisioni fisiche: un box per ogni scaffalatura (unit) del corridoio.
+  // Indipendenti dalla resa visiva dei singoli libri.
+  function addCorridorColliders(corridor, toWorld) {
+    corridor.units.forEach(function (unit) {
       const w = toWorld(unit.position.x, unit.position.z);
-      dummy.position.set(w.x, UNIT_HEIGHT / 2, w.z);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-
       const half = { x: (UNIT_WIDTH * 0.94) / 2, z: UNIT_DEPTH / 2 };
       colliders.push({
         minX: w.x - half.x, maxX: w.x + half.x,
         minZ: w.z - half.z, maxZ: w.z + half.z,
       });
     });
+  }
 
-    scene.add(mesh);
+  // Un dorso individuale per ogni libro (colorato per genere/sottogenere) più i ripiani.
+  // Ogni dorso è registrato per il raycast di interazione ("prendi in mano").
+  function buildCorridorBooks(corridor, toWorld, rotationY, color) {
+    const bookMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.75 });
+    const boardMat = new THREE.MeshStandardMaterial({ color: 0x241b12, roughness: 0.9 });
 
-    // Etichetta testuale del corridoio (sprite) all'inizio della fila
-    const startW = toWorld(-0.6, corridor.units[0] ? 0 : 0);
-    addCorridorLabel(corridor.label, corridor.bookCount, toWorld(-0.9, 0));
+    const totalBooks = corridor.bookCount;
+    const booksMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), bookMat, totalBooks);
+    const refs = new Array(totalBooks);
+    const dummy = new THREE.Object3D();
+    let bookIndex = 0;
+
+    let boardCount = 0;
+    corridor.units.forEach(function (unit) { boardCount += unit.shelves.length; });
+    const boardsMesh = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(UNIT_WIDTH * 0.94, SHELF_BOARD_THICKNESS, UNIT_DEPTH), boardMat, boardCount);
+    let boardIndex = 0;
+
+    let minWX = Infinity, maxWX = -Infinity, minWZ = Infinity, maxWZ = -Infinity;
+
+    corridor.units.forEach(function (unit) {
+      unit.shelves.forEach(function (shelf) {
+        const w = toWorld(unit.position.x, unit.position.z);
+        dummy.position.set(w.x, shelf.heightM, w.z);
+        dummy.rotation.set(0, rotationY, 0);
+        dummy.scale.set(1, 1, 1);
+        dummy.updateMatrix();
+        boardsMesh.setMatrixAt(boardIndex++, dummy.matrix);
+
+        const n = shelf.books.length;
+        const usableWidth = UNIT_WIDTH * 0.9;
+        const spineWidth = usableWidth / Math.max(n, 1);
+
+        shelf.books.forEach(function (book, i) {
+          const localAlong = unit.position.x - usableWidth / 2 + spineWidth * (i + 0.5);
+          const wb = toWorld(localAlong, unit.position.z);
+          const spineHeight = 0.17 + hash01(book.instanceId) * 0.10;
+
+          dummy.position.set(wb.x, shelf.heightM + SHELF_BOARD_THICKNESS / 2 + spineHeight / 2, wb.z);
+          dummy.rotation.set(0, rotationY, 0);
+          dummy.scale.set(spineWidth * 0.92, spineHeight, SPINE_DEPTH);
+          dummy.updateMatrix();
+          booksMesh.setMatrixAt(bookIndex, dummy.matrix);
+
+          refs[bookIndex] = book;
+          bookIndex++;
+
+          minWX = Math.min(minWX, wb.x); maxWX = Math.max(maxWX, wb.x);
+          minWZ = Math.min(minWZ, wb.z); maxWZ = Math.max(maxWZ, wb.z);
+        });
+      });
+    });
+
+    scene.add(boardsMesh);
+    scene.add(booksMesh);
+
+    const center = new THREE.Vector3((minWX + maxWX) / 2, 1, (minWZ + maxWZ) / 2);
+    const radius = Math.max(2, Math.hypot(maxWX - minWX, maxWZ - minWZ) / 2 + 1.5);
+    interactiveGroups.push({ mesh: booksMesh, refs: refs, center: center, radius: radius });
   }
 
   function addCorridorLabel(label, bookCount, worldPos) {
@@ -475,13 +626,22 @@
     });
 
     document.addEventListener('mousemove', function (e) {
-      if (!pointerLocked) return;
+      if (!pointerLocked || uiOpen) return;
       yaw -= e.movementX * 0.0022;
       pitch -= e.movementY * 0.0022;
       pitch = Math.max(-1.4, Math.min(1.4, pitch));
     });
 
+    window.addEventListener('keydown', function (e) {
+      if (e.code === 'KeyE') {
+        if (uiOpen) { closeBookPanel(); }
+        else if (targetedBook) { openBookPanel(targetedBook.ref); }
+      }
+      if (e.code === 'Escape' && uiOpen) { closeBookPanel(); }
+    });
+
     setupTouchControls();
+    setupPanelControls();
   }
 
   function setKey(code, down) {
@@ -572,6 +732,123 @@
     document.getElementById('start-overlay').style.display = 'flex';
   }
 
+  function setupPanelControls() {
+    document.getElementById('panel-close').addEventListener('click', closeBookPanel);
+    document.getElementById('book-panel-backdrop').addEventListener('click', closeBookPanel);
+    document.getElementById('mobile-pickup-btn').addEventListener('click', function () {
+      if (targetedBook) openBookPanel(targetedBook.ref);
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Interazione: raycast dal centro dello schermo verso i dorsi vicini
+  // ------------------------------------------------------------------
+  function updateInteraction() {
+    camera.updateMatrixWorld();
+    const origin = camera.position;
+    const dir = new THREE.Vector3();
+    camera.getWorldDirection(dir);
+    raycaster.set(origin, dir);
+    raycaster.far = INTERACT_MAX_DIST;
+
+    let closestRef = null;
+    let closestDist = Infinity;
+
+    for (let i = 0; i < interactiveGroups.length; i++) {
+      const g = interactiveGroups[i];
+      if (g.center.distanceTo(origin) > g.radius + INTERACT_MAX_DIST) continue;
+      const hits = raycaster.intersectObject(g.mesh);
+      if (hits.length && hits[0].distance < closestDist) {
+        closestDist = hits[0].distance;
+        closestRef = g.refs[hits[0].instanceId];
+      }
+    }
+
+    if (closestRef) {
+      if (!targetedBook || targetedBook.ref !== closestRef) {
+        targetedBook = { ref: closestRef };
+        showInteractPrompt(closestRef);
+      }
+    } else if (targetedBook) {
+      targetedBook = null;
+      hideInteractPrompt();
+    }
+  }
+
+  function showInteractPrompt(ref) {
+    const prompt = document.getElementById('interact-prompt');
+    prompt.textContent = (isTouchDevice ? '' : 'Premi E — ') + ref.title;
+    prompt.style.display = 'block';
+    if (isTouchDevice) document.getElementById('mobile-pickup-btn').style.display = 'block';
+  }
+
+  function hideInteractPrompt() {
+    document.getElementById('interact-prompt').style.display = 'none';
+    document.getElementById('mobile-pickup-btn').style.display = 'none';
+  }
+
+  // ------------------------------------------------------------------
+  // Pannello di dettaglio del libro
+  // ------------------------------------------------------------------
+  function openBookPanel(ref) {
+    const details = findBookDetails(ref.operaId, ref.instanceId);
+    if (!details || !details.opera) return;
+    const opera = details.opera, instance = details.instance;
+
+    uiOpen = true;
+    hideInteractPrompt();
+    if (pointerLocked) document.exitPointerLock();
+
+    document.getElementById('panel-title').textContent = opera.title;
+    document.getElementById('panel-authors').textContent = (opera.authors && opera.authors.length) ? opera.authors.join(', ') : 'Autore sconosciuto';
+
+    const tags = [opera.macro].concat(opera.subgenres || []).filter(Boolean);
+    const tagsEl = document.getElementById('panel-tags');
+    tagsEl.innerHTML = '';
+    tags.forEach(function (t) {
+      const span = document.createElement('span');
+      span.className = 'panel-tag';
+      span.textContent = t;
+      tagsEl.appendChild(span);
+    });
+
+    document.getElementById('panel-description').textContent = opera.description || 'Nessuna sinossi disponibile.';
+
+    const coverImg = document.getElementById('panel-cover');
+    const coverPlaceholder = document.getElementById('panel-cover-placeholder');
+    const coverPath = instance && instance.coverPath;
+    if (coverPath) {
+      coverImg.src = './data/' + coverPath;
+      coverImg.style.display = 'block';
+      coverPlaceholder.style.display = 'none';
+    } else {
+      coverImg.style.display = 'none';
+      coverPlaceholder.style.display = 'flex';
+    }
+
+    const meta = [];
+    if (instance) {
+      if (instance.format) meta.push(instance.format);
+      if (instance.totalPages) meta.push(instance.totalPages + ' pagine');
+    }
+    const edition = opera.editions && opera.editions[0];
+    if (edition && edition.publisher) meta.push(edition.publisher);
+    document.getElementById('panel-meta').textContent = meta.join(' · ');
+
+    document.getElementById('book-panel').style.display = 'flex';
+    if (isTouchDevice) document.getElementById('touch-controls').style.display = 'none';
+  }
+
+  function closeBookPanel() {
+    document.getElementById('book-panel').style.display = 'none';
+    uiOpen = false;
+    if (isTouchDevice) {
+      document.getElementById('touch-controls').style.display = 'block';
+    } else {
+      renderer.domElement.requestPointerLock();
+    }
+  }
+
   // ------------------------------------------------------------------
   // Movimento e collisioni
   // ------------------------------------------------------------------
@@ -654,7 +931,10 @@
     const dt = Math.min(0.05, (now - lastTime) / 1000);
     lastTime = now;
 
-    updateMovement(dt);
+    if (!uiOpen) {
+      updateMovement(dt);
+      updateInteraction();
+    }
     renderer.render(scene, camera);
   }
 
