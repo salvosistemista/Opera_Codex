@@ -167,6 +167,7 @@
   const CORRIDOR_SPACING = CORRIDOR_WALK_WIDTH + UNIT_DEPTH + 0.5;
   const ROOM_MARGIN = 2.0;
   const UNIT_HEIGHT = 2.1; // 6 ripiani
+  const SHELVES_PER_UNIT = 6;
 
   const HUB_HALF_SIZE = 5.0;   // atrio centrale 10x10
   const HALLWAY_LENGTH = 3.0;  // corridoio di collegamento hub -> sala
@@ -521,29 +522,46 @@
     });
   }
 
-  // Un dorso individuale per ogni libro (colorato per genere/sottogenere) più i ripiani.
-  // Ogni dorso è registrato per il raycast di interazione ("prendi in mano").
+  // Un dorso individuale per ogni libro (colorato per genere/sottogenere) più una
+  // struttura di scaffalatura completa e identica per ogni unità: due fianchi laterali
+  // e tutti i ripiani (anche vuoti, se non ci sono abbastanza libri per riempirli).
   function buildCorridorBooks(corridor, toWorld, rotationY, color) {
     const bookMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.75 });
     const boardMat = new THREE.MeshStandardMaterial({ color: 0x241b12, roughness: 0.9 });
 
     const totalBooks = corridor.bookCount;
-    const booksMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), bookMat, totalBooks);
+    const booksMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), bookMat, Math.max(totalBooks, 1));
     const refs = new Array(totalBooks);
     const dummy = new THREE.Object3D();
     let bookIndex = 0;
 
-    let boardCount = 0;
-    corridor.units.forEach(function (unit) { boardCount += unit.shelves.length; });
+    const nUnits = corridor.units.length;
+    const boardCount = nUnits * SHELVES_PER_UNIT;      // un ripiano per livello, sempre presente
+    const sideCount = nUnits * 2;                       // due fianchi per scaffalatura
+
     const boardsMesh = new THREE.InstancedMesh(
       new THREE.BoxGeometry(UNIT_WIDTH * 0.94, SHELF_BOARD_THICKNESS, UNIT_DEPTH), boardMat, boardCount);
-    let boardIndex = 0;
+    const sidesMesh = new THREE.InstancedMesh(
+      new THREE.BoxGeometry(SHELF_BOARD_THICKNESS, UNIT_HEIGHT, UNIT_DEPTH), boardMat, sideCount);
+    let boardIndex = 0, sideIndex = 0;
 
     let minWX = Infinity, maxWX = -Infinity, minWZ = Infinity, maxWZ = -Infinity;
 
     corridor.units.forEach(function (unit) {
+      const w = toWorld(unit.position.x, unit.position.z);
+
+      // Fianchi: sempre presenti, stessa altezza per ogni scaffalatura
+      [-1, 1].forEach(function (side) {
+        const localX = unit.position.x + side * (UNIT_WIDTH * 0.47);
+        const ws = toWorld(localX, unit.position.z);
+        dummy.position.set(ws.x, UNIT_HEIGHT / 2, ws.z);
+        dummy.rotation.set(0, rotationY, 0);
+        dummy.updateMatrix();
+        sidesMesh.setMatrixAt(sideIndex++, dummy.matrix);
+      });
+
+      // Ripiani: tutti e SHELVES_PER_UNIT, anche quelli senza libri
       unit.shelves.forEach(function (shelf) {
-        const w = toWorld(unit.position.x, unit.position.z);
         dummy.position.set(w.x, shelf.heightM, w.z);
         dummy.rotation.set(0, rotationY, 0);
         dummy.scale.set(1, 1, 1);
@@ -551,8 +569,9 @@
         boardsMesh.setMatrixAt(boardIndex++, dummy.matrix);
 
         const n = shelf.books.length;
+        if (n === 0) return;
         const usableWidth = UNIT_WIDTH * 0.9;
-        const spineWidth = usableWidth / Math.max(n, 1);
+        const spineWidth = usableWidth / n;
 
         shelf.books.forEach(function (book, i) {
           const localAlong = unit.position.x - usableWidth / 2 + spineWidth * (i + 0.5);
@@ -574,9 +593,11 @@
       });
     });
 
+    scene.add(sidesMesh);
     scene.add(boardsMesh);
     scene.add(booksMesh);
 
+    if (totalBooks === 0) return;
     const center = new THREE.Vector3((minWX + maxWX) / 2, 1, (minWZ + maxWZ) / 2);
     const radius = Math.max(2, Math.hypot(maxWX - minWX, maxWZ - minWZ) / 2 + 1.5);
     interactiveGroups.push({ mesh: booksMesh, refs: refs, center: center, radius: radius });
